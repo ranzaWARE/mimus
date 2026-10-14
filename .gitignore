@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Compilazione e pacchetti
+build/
+dist/
+
+# rclone secrets
+rclone.conf
+*.conf.local
+.env
+.env.*
+*.log

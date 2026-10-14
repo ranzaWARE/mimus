@@ -1,0 +1,335 @@
+diff --git a/vfs/vfscache/cache.go b/vfs/vfscache/cache.go
+index 0ffa30c..b9fdd35 100644
+--- a/vfs/vfscache/cache.go
++++ b/vfs/vfscache/cache.go
+@@ -144,9 +144,30 @@ func New(ctx context.Context, fremote fs.Fs, opt *vfscommon.Options, avFn AddVir
+ 
+ 	go c.cleaner(ctx)
+ 
++	// mimus patch: retry failed uploads as soon as the remote is back
++	if r, ok := fremote.(ReconnectNotifier); ok {
++		r.SetReconnectHook(c.retryUploadsNow)
++	}
++
+ 	return c, nil
+ }
+ 
++// ReconnectNotifier can be implemented by the remote to tell the cache
++// when it is reachable again (mimus patch)
++type ReconnectNotifier interface {
++	SetReconnectHook(func())
++}
++
++// retryUploadsNow makes the uploads that already failed eligible at once
++func (c *Cache) retryUploadsNow() {
++	now := time.Now()
++	for _, q := range c.writeback.Queue() {
++		if !q.Uploading && q.Tries > 0 {
++			_ = c.writeback.SetExpiry(q.ID, now, 0)
++		}
++	}
++}
++
+ // Stats returns info about the Cache
+ func (c *Cache) Stats() (out rc.Params) {
+ 	out = make(rc.Params)
+@@ -417,10 +438,22 @@ func rename(osOldPath, osNewPath string) error {
+ // Rename the item in cache
+ func (c *Cache) Rename(name string, newName string, newObj fs.Object) (err error) {
+ 	item, _ := c.get(name)
++	// mimus patch: remember which remote version is being replaced
++	var replacedFingerprint string
++	c.mu.Lock()
++	if old, ok := c.item[newName]; ok && old != item {
++		c.mu.Unlock()
++		replacedFingerprint = old.fingerprint()
++	} else {
++		c.mu.Unlock()
++	}
+ 	err = item.rename(name, newName, newObj)
+ 	if err != nil {
+ 		return err
+ 	}
++	if replacedFingerprint != "" {
++		item.adoptFingerprint(replacedFingerprint)
++	}
+ 
+ 	// Move the item in the cache
+ 	c.mu.Lock()
+@@ -628,6 +661,10 @@ func (c *Cache) retryFailedResets() {
+ 
+ // Remove cache files that are not dirty until the quota is satisfied
+ func (c *Cache) purgeClean() {
++	if checker, ok := c.fremote.(EvictionChecker); ok {
++		c.purgeCleanChecked(checker)
++		return
++	}
+ 	c.mu.Lock()
+ 	defer c.mu.Unlock()
+ 
+@@ -673,8 +710,153 @@ func (c *Cache) purgeClean() {
+ 	c.cond.Broadcast()
+ }
+ 
++// ---- mimus patch: remote-controlled eviction and upload conflicts ----
++
++// EvictionChecker can be implemented by the remote to veto the removal of
++// cache files, e.g. while the remote is unreachable or when the file is no
++// longer on the remote (the local copy would be the only one left).
++type EvictionChecker interface {
++	CacheEvictionAllowed(ctx context.Context, remote string) bool
++}
++
++// UploadConflictResolver can be implemented by the remote to check, before a
++// locally modified file is uploaded, whether the remote copy changed meanwhile.
++//
++// baseFingerprint is the fingerprint of the remote version the local copy
++// started from ("" for a new file). The returned action is:
++//
++//   - "" or "overwrite": upload normally (current, if not nil, is the remote
++//     object to replace)
++//   - "keepboth": upload the local copy as newName, leave the remote file alone
++//   - "discard": drop the local changes, keep the remote file
++type UploadConflictResolver interface {
++	ResolveUploadConflict(ctx context.Context, name, baseFingerprint string, fast bool) (action, newName string, current fs.Object, err error)
++}
++
++// evictionCandidates returns the names of the items selected by keep,
++// sorted oldest access first. Call with c.mu held.
++func (c *Cache) evictionCandidates(keep func(item *Item) bool) []string {
++	var items Items
++	names := make(map[*Item]string)
++	for name, item := range c.item {
++		if keep(item) {
++			items = append(items, item)
++			names[item] = name
++		}
++	}
++	sort.Sort(items)
++	out := make([]string, len(items))
++	for i, item := range items {
++		out[i] = names[item]
++	}
++	return out
++}
++
++// purgeOldChecked is purgeOld asking the remote before removing anything.
++// The remote is queried without holding the cache lock.
++func (c *Cache) purgeOldChecked(maxAge time.Duration, checker EvictionChecker) {
++	c.mu.Lock()
++	candidates := c.evictionCandidates(func(item *Item) bool { return item.isOldCandidate(maxAge) })
++	c.mu.Unlock()
++	for _, name := range candidates {
++		if !checker.CacheEvictionAllowed(context.Background(), name) {
++			continue
++		}
++		c.mu.Lock()
++		if item, ok := c.item[name]; ok {
++			c.removeNotInUse(item, maxAge, false) // re-checks age, opens and dirty
++		}
++		c.mu.Unlock()
++	}
++	c.mu.Lock()
++	if c.quotasOK() {
++		c.outOfSpace = false
++		c.cond.Broadcast()
++	}
++	c.mu.Unlock()
++}
++
++// purgeOverQuotaChecked is purgeOverQuota asking the remote first
++func (c *Cache) purgeOverQuotaChecked(checker EvictionChecker) {
++	c.updateUsed()
++	c.mu.Lock()
++	if c.quotasOK() {
++		c.mu.Unlock()
++		return
++	}
++	candidates := c.evictionCandidates(func(item *Item) bool { return !item.inUse() && !item.IsDirty() })
++	c.mu.Unlock()
++	for _, name := range candidates {
++		c.mu.Lock()
++		ok := c.quotasOK()
++		c.mu.Unlock()
++		if ok {
++			break
++		}
++		if !checker.CacheEvictionAllowed(context.Background(), name) {
++			continue
++		}
++		c.mu.Lock()
++		if item, found := c.item[name]; found && !item.inUse() {
++			c.removeNotInUse(item, 0, false)
++		}
++		c.mu.Unlock()
++	}
++	c.mu.Lock()
++	if c.quotasOK() {
++		c.outOfSpace = false
++		c.cond.Broadcast()
++	}
++	c.mu.Unlock()
++}
++
++// purgeCleanChecked is purgeClean asking the remote first
++func (c *Cache) purgeCleanChecked(checker EvictionChecker) {
++	c.mu.Lock()
++	if c.quotasOK() {
++		c.mu.Unlock()
++		return
++	}
++	candidates := c.evictionCandidates(func(item *Item) bool { return !item.IsDirty() })
++	c.mu.Unlock()
++	for _, name := range candidates {
++		c.mu.Lock()
++		ok := c.quotasOK()
++		c.mu.Unlock()
++		if ok {
++			break
++		}
++		if !checker.CacheEvictionAllowed(context.Background(), name) {
++			continue
++		}
++		c.mu.Lock()
++		if item, found := c.item[name]; found {
++			resetResult, spaceFreed, err := item.Reset()
++			c.used -= spaceFreed
++			fs.Infof(c.fremote, "vfs cache purgeClean item.Reset %s: %s, freed %d bytes", name, resetResult.String(), spaceFreed)
++			if resetResult == RemovedNotInUse {
++				delete(c.item, name)
++			}
++			if err != nil {
++				c.errItems[name] = err
++			}
++		}
++		c.mu.Unlock()
++	}
++	c.mu.Lock()
++	c.outOfSpace = false
++	c.cond.Broadcast()
++	c.mu.Unlock()
++}
++
++// ---- end mimus patch ----
++
+ // purgeOld gets rid of any files that are over age
+ func (c *Cache) purgeOld(maxAge time.Duration) {
++	if checker, ok := c.fremote.(EvictionChecker); ok {
++		c.purgeOldChecked(maxAge, checker)
++		return
++	}
+ 	c.mu.Lock()
+ 	defer c.mu.Unlock()
+ 	// cutoff := time.Now().Add(-maxAge)
+@@ -754,6 +936,10 @@ func (c *Cache) haveQuotas() bool {
+ // Remove clean cache files that are not open until the total space
+ // is reduced below quota starting from the oldest first
+ func (c *Cache) purgeOverQuota() {
++	if checker, ok := c.fremote.(EvictionChecker); ok {
++		c.purgeOverQuotaChecked(checker)
++		return
++	}
+ 	c.updateUsed()
+ 
+ 	c.mu.Lock()
+diff --git a/vfs/vfscache/item.go b/vfs/vfscache/item.go
+index 66adc9b..a02dfae 100644
+--- a/vfs/vfscache/item.go
++++ b/vfs/vfscache/item.go
+@@ -582,6 +582,61 @@ func unlockMutexForCall(mu *sync.Mutex, f func()) {
+ 	f()
+ }
+ 
++// _finishWithoutUpload marks a modified item as clean without uploading it
++// to its own name (mimus patch). The next open sees the cache as stale
++// and downloads the remote version.
++//
++// call with lock held
++func (item *Item) _finishWithoutUpload(current fs.Object, storeFn StoreFn) error {
++	item.o = current
++	if storeFn != nil && current != nil {
++		item.mu.Unlock()
++		storeFn(current)
++		item.mu.Lock()
++	}
++	item.info.Dirty = false
++	// a fingerprint that never matches: the next open drops the local data
++	// and downloads the remote version
++	item.info.Fingerprint = staleFingerprint
++	if err := item._save(); err != nil {
++		fs.Errorf(item.name, "vfs cache: failed to write metadata file: %v", err)
++	}
++	return nil
++}
++
++const staleFingerprint = "mimus:stale"
++
++// fingerprint returns the fingerprint of the remote version the cache
++// started from (mimus patch)
++func (item *Item) fingerprint() string {
++	item.mu.Lock()
++	defer item.mu.Unlock()
++	return item.info.Fingerprint
++}
++
++// adoptFingerprint sets the base fingerprint if the item has none: a file
++// renamed over an existing one (safe-save) is a new version of it
++// (mimus patch)
++func (item *Item) adoptFingerprint(fp string) {
++	item.mu.Lock()
++	defer item.mu.Unlock()
++	if item.info.Fingerprint == "" && fp != "" && fp != staleFingerprint {
++		item.info.Fingerprint = fp
++		_ = item._save()
++	}
++}
++
++// isOldCandidate reports whether the item could be removed by age:
++// not open, fully uploaded and not accessed for maxAge (mimus patch)
++func (item *Item) isOldCandidate(maxAge time.Duration) bool {
++	item.mu.Lock()
++	defer item.mu.Unlock()
++	if maxAge <= 0 || item.opens != 0 || item.info.Dirty {
++		return false
++	}
++	return item.info.ATime.Before(time.Now().Add(-maxAge))
++}
++
+ // Store stores the local cache file to the remote object, returning
+ // the new remote object. objOld is the old object if known.
+ //
+@@ -598,6 +653,34 @@ func (item *Item) _store(ctx context.Context, storeFn StoreFn) (err error) {
+ 	// Object has disappeared if cacheObj == nil
+ 	if cacheObj != nil {
+ 		o, name := item.o, item.name
++		// mimus patch: ask the remote whether the file changed meanwhile
++		if r, ok := item.c.fremote.(UploadConflictResolver); ok {
++			base, fast := item.info.Fingerprint, item.c.opt.FastFingerprint
++			var action, newName string
++			var current fs.Object
++			unlockMutexForCall(&item.mu, func() {
++				action, newName, current, err = r.ResolveUploadConflict(ctx, name, base, fast)
++			})
++			if err != nil {
++				return fmt.Errorf("vfs cache: upload conflict check failed: %w", err)
++			}
++			switch action {
++			case "keepboth":
++				unlockMutexForCall(&item.mu, func() {
++					_, err = operations.Copy(ctx, item.c.fremote, nil, newName, cacheObj)
++				})
++				if err != nil {
++					return fmt.Errorf("vfs cache: failed to upload conflict copy: %w", err)
++				}
++				return item._finishWithoutUpload(current, storeFn)
++			case "discard":
++				return item._finishWithoutUpload(current, storeFn)
++			default:
++				if current != nil {
++					o = current
++				}
++			}
++		}
+ 		unlockMutexForCall(&item.mu, func() {
+ 			o, err = operations.Copy(ctx, item.c.fremote, o, name, cacheObj)
+ 		})

@@ -1,0 +1,11 @@
+MIMUS
+Copyright 2026 ranzaWARE and MIMUS contributors
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product includes software from rclone (https://rclone.org),
+Copyright (C) 2012 by Nick Craig-Wood, licensed under the MIT License.
+The build scripts download rclone, apply src/patches/vfscache.patch and add
+the "offline" backend in src/offline; the resulting rclone-mimus binary is
+distributed inside MIMUS.app. rclone and its dependencies keep their own
+licenses (see the rclone repository and its vendor directory).
