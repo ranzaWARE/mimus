@@ -231,6 +231,9 @@ func installUpdate(p paths, r release) error {
 	}
 
 	mnt := filepath.Join(tmp, "mnt")
+	if err := os.MkdirAll(mnt, 0o700); err != nil {
+		return err
+	}
 	if out, err := run("hdiutil", "attach", "-nobrowse", "-readonly", "-noautoopen", "-mountpoint", mnt, dmg); err != nil {
 		return fmt.Errorf("non riesco ad aprire il DMG: %s", out)
 	}
@@ -293,22 +296,36 @@ func download(ctx context.Context, url, path string) (string, error) {
 	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
-// replaceBundle swaps dst with a copy of src; the old version is kept until
-// the new one is in place. Asks for the administrator password if the app
-// folder is not writable.
+// replaceBundle swaps dst with a copy of src; the old version stays in place
+// until the new one is complete. Asks for the administrator password if the
+// app folder is not writable by this user.
 func replaceBundle(src, dst string) error {
 	parent := filepath.Dir(dst)
 	staged := filepath.Join(parent, ".MIMUS-new.app")
 	old := filepath.Join(parent, ".MIMUS-old.app")
-	script := fmt.Sprintf("rm -rf %[2]s %[3]s && ditto %[1]s %[2]s && xattr -dr com.apple.quarantine %[2]s 2>/dev/null; mv %[4]s %[3]s && mv %[2]s %[4]s && rm -rf %[3]s",
-		shellQuote(src), shellQuote(staged), shellQuote(old), shellQuote(dst))
-	if out, err := run("/bin/sh", "-c", script); err == nil {
-		return nil
-	} else if !strings.Contains(strings.ToLower(out), "permission denied") {
-		_, _ = run("/bin/sh", "-c", "[ -d "+shellQuote(dst)+" ] || mv "+shellQuote(old)+" "+shellQuote(dst)+"; rm -rf "+shellQuote(staged))
-		return fmt.Errorf("non riesco a sostituire l'app: %s", out)
+	_ = os.RemoveAll(staged)
+	_ = os.RemoveAll(old)
+	out, err := run("ditto", src, staged)
+	if err == nil {
+		_, _ = run("xattr", "-dr", "com.apple.quarantine", staged)
+		if err = os.Rename(dst, old); err == nil {
+			if err = os.Rename(staged, dst); err != nil {
+				_ = os.Rename(old, dst) // put the old version back
+				_ = os.RemoveAll(staged)
+				return fmt.Errorf("non riesco a sostituire l'app: %v", err)
+			}
+			_ = os.RemoveAll(old)
+			return nil
+		}
+		out = err.Error()
 	}
-	// /Applications not writable by this user: ask for the admin password
+	_ = os.RemoveAll(staged)
+	if !strings.Contains(strings.ToLower(out), "permission denied") {
+		return fmt.Errorf("non riesco a sostituire l'app: %s", strings.TrimSpace(out))
+	}
+	// app folder not writable by this user: same steps as administrator
+	script := fmt.Sprintf("set -e; rm -rf %[2]s %[3]s; ditto %[1]s %[2]s; xattr -dr com.apple.quarantine %[2]s 2>/dev/null || true; mv %[4]s %[3]s; if mv %[2]s %[4]s; then rm -rf %[3]s; else mv %[3]s %[4]s; exit 1; fi",
+		shellQuote(src), shellQuote(staged), shellQuote(old), shellQuote(dst))
 	osaScript := "do shell script " + appleScriptString(script) + " with administrator privileges"
 	if out, err := run("/usr/bin/osascript", "-e", osaScript); err != nil {
 		return fmt.Errorf("serve la password di amministratore: %s", out)

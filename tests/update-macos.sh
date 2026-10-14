@@ -13,7 +13,7 @@ DMG="$ROOT/dist/MIMUS-$VERSION.dmg"
 T="$(mktemp -d)"; PORT=8765
 mkdir -p "$T/Apps" "$T/www" "$T/home"
 FAILS=0
-ok(){ if eval "$2"; then echo "  OK   $1"; else echo "  FAIL $1"; FAILS=$((FAILS+1)); fi; }
+ok(){ if eval "$2"; then echo "  OK   $1"; else echo "  FAIL $1"; echo "::error title=update-macos::$1"; FAILS=$((FAILS+1)); fi; }
 
 # app "vecchia" (versione 0.0.1)
 (cd "$ROOT/src/app" && CGO_ENABLED=0 go build -ldflags "-X main.appVersion=0.0.1" -o "$T/MIMUS-old" .)
@@ -52,7 +52,7 @@ export MIMUS_UI="$T/ui.sh" MIMUS_UPDATE_URL="http://127.0.0.1:$PORT/latest.json"
 
 echo "== aggiornamento da 0.0.1 a $VERSION"
 make_old
-"$T/Apps/MIMUS.app/Contents/MacOS/MIMUS" --offer-update || true
+"$T/Apps/MIMUS.app/Contents/MacOS/MIMUS" --offer-update > "$T/run1.log" 2>&1 || echo "::notice title=uscita::$(tail -c 300 "$T/run1.log" | tr '\n' ' ')"
 ok "proposta mostrata" "grep -q 'È disponibile MIMUS $VERSION' '$T/ui.log'"
 ok "app aggiornata alla $VERSION" "[ \"\$('$T/Apps/MIMUS.app/Contents/MacOS/MIMUS' --version)\" = '$VERSION' ]"
 ok "firma valida" "codesign --verify --deep --strict '$T/Apps/MIMUS.app'"
@@ -67,5 +67,5 @@ echo "0000000000000000000000000000000000000000000000000000000000000000  x" > "$T
 ok "errore mostrato" "grep -q 'danneggiato' '$T/ui.log'"
 ok "versione vecchia intatta" "[ \"\$('$T/Apps/MIMUS.app/Contents/MacOS/MIMUS' --version)\" = '0.0.1' ]"
 
-echo; [ $FAILS -eq 0 ] && echo "TUTTI I TEST OK" || { echo "$FAILS TEST FALLITI"; cat "$T/ui.log"; }
+echo; [ $FAILS -eq 0 ] && echo "TUTTI I TEST OK" || { echo "$FAILS TEST FALLITI"; while read -r l; do echo "::notice title=dialoghi::$l"; done < "$T/ui.log"; }
 exit $FAILS
