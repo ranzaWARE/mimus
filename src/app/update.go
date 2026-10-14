@@ -142,6 +142,9 @@ func versionParts(v string) []int {
 // availableUpdate returns the newer release, if any (errors are silent)
 func availableUpdate(timeout time.Duration) (release, bool) {
 	r, err := latestRelease(timeout)
+	if os.Getenv("MIMUS_DEBUG") != "" {
+		fmt.Fprintf(os.Stderr, "update check: %s -> tag %q, err %v, app %s\n", updateURL(), r.Tag, err, appVersion)
+	}
 	if err != nil || !newerVersion(r.version(), appVersion) {
 		return release{}, false
 	}

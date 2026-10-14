@@ -32,10 +32,11 @@ cat > "$T/www/latest.json" <<JSON
  "assets":[{"name":"MIMUS-$VERSION.dmg","browser_download_url":"http://127.0.0.1:$PORT/MIMUS-$VERSION.dmg"},
            {"name":"MIMUS-$VERSION.dmg.sha256","browser_download_url":"http://127.0.0.1:$PORT/MIMUS-$VERSION.dmg.sha256"}]}
 JSON
-(cd "$T/www" && exec python3 -m http.server $PORT >/dev/null 2>&1) &
+(cd "$T/www" && exec python3 -m http.server $PORT --bind 127.0.0.1 >/dev/null 2>&1) &
 SRV=$!
 trap 'kill $SRV 2>/dev/null; rm -rf "$T"' EXIT
-sleep 1
+for i in 1 2 3 4 5 6 7 8 9 10; do curl -sf "http://127.0.0.1:$PORT/latest.json" >/dev/null && break; sleep 1; done
+curl -sf "http://127.0.0.1:$PORT/latest.json" >/dev/null || echo "::error title=update-macos::finto GitHub non raggiungibile"
 
 # risposte dell'utente: "Aggiorna" alla proposta, OK al resto
 cat > "$T/ui.sh" <<UI
@@ -48,11 +49,12 @@ case \$kind in
 esac
 UI
 chmod +x "$T/ui.sh"
-export MIMUS_UI="$T/ui.sh" MIMUS_UPDATE_URL="http://127.0.0.1:$PORT/latest.json" MIMUS_NO_RELAUNCH=1 HOME="$T/home"
+export MIMUS_DEBUG=1 MIMUS_UI="$T/ui.sh" MIMUS_UPDATE_URL="http://127.0.0.1:$PORT/latest.json" MIMUS_NO_RELAUNCH=1 HOME="$T/home"
 
 echo "== aggiornamento da 0.0.1 a $VERSION"
 make_old
-"$T/Apps/MIMUS.app/Contents/MacOS/MIMUS" --offer-update > "$T/run1.log" 2>&1 || echo "::notice title=uscita::$(tail -c 300 "$T/run1.log" | tr '\n' ' ')"
+"$T/Apps/MIMUS.app/Contents/MacOS/MIMUS" --offer-update > "$T/run1.log" 2>&1 || true
+echo "::notice title=output::$(tail -c 400 "$T/run1.log" | tr '\n' ' ')"
 ok "proposta mostrata" "grep -q 'È disponibile MIMUS $VERSION' '$T/ui.log'"
 ok "app aggiornata alla $VERSION" "[ \"\$('$T/Apps/MIMUS.app/Contents/MacOS/MIMUS' --version)\" = '$VERSION' ]"
 ok "firma valida" "codesign --verify --deep --strict '$T/Apps/MIMUS.app'"
