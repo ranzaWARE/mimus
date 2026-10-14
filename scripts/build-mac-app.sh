@@ -67,5 +67,7 @@ else
     rm -f "$IMG"
 fi
 rm -rf "$STAGE"
+# controllo di integrità usato dall'aggiornamento automatico
+(cd "$ROOT/dist" && { shasum -a 256 "$(basename "$DMG")" 2>/dev/null || sha256sum "$(basename "$DMG")"; } > "$(basename "$DMG").sha256")
 echo "App: $APP"
 echo "DMG: $DMG ($(du -h "$DMG" | cut -f1))"

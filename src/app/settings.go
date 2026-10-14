@@ -31,6 +31,7 @@ func settingsMenu(p paths, s *settings) paths {
 			fmt.Sprintf("Togli dal Mac i file non usati da: %d giorni", s.RetentionDays),
 			fmt.Sprintf("Spazio minimo libero sul disco: %d GB", s.MinFreeGB),
 			fmt.Sprintf("Novità dei colleghi visibili entro: %d minuti", s.RefreshMin),
+			"Aggiornamenti automatici di MIMUS: " + yesNo(!s.NoAutoUpdate),
 		}
 		c := choose("Impostazioni: scegli cosa cambiare.\nLe modifiche vengono applicate quando premi «Fine».", items, "Modifica", "Fine")
 		switch {
@@ -95,6 +96,12 @@ func settingsMenu(p paths, s *settings) paths {
 			s.RetentionDays = askNumber("Togli dal Mac i file che non apri da quanti giorni?\n(Sono tolti solo se sono al sicuro sul server remoto.)", s.RetentionDays, 1, 3650)
 		case strings.HasPrefix(c, "Spazio minimo"):
 			s.MinFreeGB = askNumber("Spazio da lasciare sempre libero sul disco (GB):", s.MinFreeGB, 1, 1000)
+		case strings.HasPrefix(c, "Aggiornamenti automatici"):
+			// applied at once, no need to restart the connection
+			s.NoAutoUpdate = !s.NoAutoUpdate
+			orig.NoAutoUpdate = s.NoAutoUpdate
+			_ = saveSettings(p, *s)
+			setUpdater(p, !s.NoAutoUpdate)
 		case strings.HasPrefix(c, "Novità"):
 			s.RefreshMin = askNumber("Entro quanti minuti vedere le modifiche fatte dai colleghi?\n(Valori bassi = più richieste al server remoto.)", s.RefreshMin, 1, 120)
 		}
@@ -272,4 +279,11 @@ func copyDir(src, dst string) error {
 		}
 		return err
 	})
+}
+
+func yesNo(b bool) string {
+	if b {
+		return "sì"
+	}
+	return "no"
 }

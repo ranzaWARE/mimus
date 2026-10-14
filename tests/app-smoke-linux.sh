@@ -61,6 +61,16 @@ open(sys.argv[1] + ".mnt", "w").write(a[3])
 PY
   cp "$1.mnt" $D/mnt
   (eval "$(cat $D/cmd)" >/dev/null 2>&1 & echo $! > $D/pid); touch $D/loaded; echo "$1" > $D/plist; }
+# controllo aggiornamenti giornaliero: solo registrato, non eseguito
+case "$*" in
+  *app.mimus.update*)
+    case "$1" in
+      print) [ -f $D/upd ] || exit 113; echo "state = not running";;
+      bootstrap) touch $D/upd;;
+      bootout) [ -f $D/upd ] || exit 3; rm -f $D/upd;;
+    esac
+    exit 0;;
+esac
 case "$1" in
   print) [ -f $D/loaded ] || exit 113; running && echo "state = running" || echo "state = not running";;
   bootstrap) start "$3";;
@@ -101,7 +111,12 @@ printf '%s\n' 'nel Finder|Lavoro' 'Indirizzo|smb://smbtest@127.0.0.1/Tecnico' 'C
     'Spazio|5' 'quanti giorni|10' 'quanti minuti|2' 'Nome della cartella|Server' 'Nuova password|Nuova123' > $T/inputs
 mkdir -p $HOME/Dati
 printf 'Dove vuoi la cartella collegata|%s\nDove tenere|%s\n' "$HOME" "$HOME/Dati" > $T/folders
-export MIMUS_UI=$T/ui.sh PATH=$T/stubs:$PATH
+# finto GitHub: l'ultima versione pubblicata è quella installata
+VER=$(cat "$ROOT/VERSION"); mkdir -p $T/www
+printf '{"tag_name":"v%s","body":"","assets":[]}' "$VER" > $T/www/latest.json
+(cd $T/www && exec python3 -m http.server 8766 >/dev/null 2>&1) &
+WWW=$!
+export MIMUS_UI=$T/ui.sh PATH=$T/stubs:$PATH MIMUS_UPDATE_URL=http://127.0.0.1:8766/latest.json
 
 echo "== primo avvio: configurazione"
 printf 'Stato dettagliato\n\n' > $T/choices
@@ -116,6 +131,9 @@ ok "cartella collegata, col nome scelto" "[ -f $HOME/Lavoro/Doc/a.txt ]"
 ok "chiesto il nome della cartella" "grep -q 'Nome della cartella nel Finder' $T/ui.log"
 ok "messaggio finale" "grep -q 'Fatto: la cartella è collegata' $T/ui.log"
 ok "niente .DS_Store sui volumi di rete" "grep -q DSDontWriteNetworkStores $T/cmds.log"
+U=$HOME/Library/LaunchAgents/app.mimus.update.plist
+ok "controllo aggiornamenti giornaliero attivo" "grep -q -- '--check-update' '$U' && [ -f $HOME/.fake-launchd/upd ]"
+ok "nessuna proposta di aggiornamento (già aggiornata)" "! grep -q 'disponibile' $T/ui.log"
 
 echo "== riapertura con versione nuova: servizio aggiornato e riavviato"
 sed -i 's/"version": "[^"]*"/"version": "0.9"/' "$HOME/Library/Application Support/MIMUS/settings.json"
@@ -169,6 +187,12 @@ ok "nuova password salvata" "[ \"\$('$RCL' reveal -- \$(awk -F' = ' '/^pass/{pri
 ok "collegato con la nuova password" "ls $HOME/Server/Doc | grep -q a.txt"
 printf 'Passw0rd\nPassw0rd\n' | smbpasswd -c $T/smb.conf -s smbtest >/dev/null
 
+echo "== aggiornamenti: controllo manuale e disattivazione"
+printf 'Controlla aggiornamenti\nImpostazioni\n~Aggiornamenti automatici\n\n\n' > $T/choices
+timeout 60 "$MAC/MIMUS"
+ok "controllo manuale: già aggiornata" "grep -q 'MIMUS è aggiornato' $T/ui.log"
+ok "aggiornamenti automatici disattivati" "[ ! -f '$U' ] && [ ! -f $HOME/.fake-launchd/upd ] && grep -q '\"no_auto_update\": true' '$HOME/Library/Application Support/MIMUS/settings.json'"
+
 echo "== disinstallazione"
 printf 'Disinstalla\n' > $T/choices
 timeout 60 "$MAC/MIMUS"
@@ -178,6 +202,6 @@ ok "file spostati cancellati" "[ ! -d '$HOME/Dati/MIMUS cache' ]"
 ok "cache e impostazioni cancellate" "[ ! -d '$HOME/Library/Application Support/MIMUS' ]"
 ok "credenziali cancellate" "! grep -qE '^\[(mimus|remoto)\]' $HOME/.config/rclone/rclone.conf 2>/dev/null"
 
-pkill -f "smbd -s $T/smb.conf"
+pkill -f "smbd -s $T/smb.conf"; kill $WWW 2>/dev/null
 echo; [ $FAILS -eq 0 ] && echo "TUTTI I TEST OK" || { echo "$FAILS TEST FALLITI"; echo "dialoghi:"; cat $T/ui.log; }
 exit $FAILS

@@ -66,6 +66,7 @@ type settings struct {
 	RefreshMin    int    `json:"refresh_min"`    // novità dei colleghi visibili entro N minuti
 	MountPath     string `json:"mount_path"`     // cartella collegata nel Finder
 	CacheDir      string `json:"cache_dir"`      // dove stanno i file tenuti sul Mac e la coda offline
+	NoAutoUpdate  bool   `json:"no_auto_update"` // non controllare da solo gli aggiornamenti
 }
 
 // defaults fills the missing values

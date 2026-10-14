@@ -21,8 +21,11 @@ Da quel momento la cartella si collega da sola a ogni accensione: l'app
 serve solo per vedere lo stato o cambiare qualcosa. Non servono privilegi di
 amministratore.
 
-**Aggiornare:** trascina la nuova versione in Applicazioni (sostituisci) e
-aprila una volta. Configurazione, file sul Mac e modifiche in coda restano.
+**Aggiornare:** automatico. MIMUS controlla le Release di questo repository
+quando la apri e una volta al giorno; con «Aggiorna» scarica il DMG, verifica
+lo SHA-256, sostituisce l'app e riavvia il collegamento. Configurazione, file
+sul Mac e modifiche in coda restano. A mano: menu → *Controlla aggiornamenti*,
+oppure trascina il nuovo DMG in Applicazioni (sostituisci) e apri l'app.
 
 **Disinstallare:** app → *Disinstalla*, poi trascina l'app nel Cestino. Si
 rifiuta se ci sono modifiche non ancora caricate sul server remoto.
@@ -75,14 +78,25 @@ Diagnostica da Terminale: `bash scripts/status.sh`.
 | `scripts/build-mac-app.sh` | app universale (Apple Silicon + Intel), firma ad-hoc, DMG |
 | `tests/e2e-linux.sh` | test end-to-end del modulo con Samba e FUSE |
 | `tests/app-smoke-linux.sh` | test dell'app: configurazione, aggiornamento, disinstallazione |
+| `tests/update-macos.sh` | prova dell'aggiornamento automatico da un finto GitHub (macOS, nella CI) |
 | `.github/workflows/build.yml` | a ogni tag `v*` compila, testa e produce il DMG |
 
-Nuova versione: aggiorna `VERSION` e `CHANGELOG.md`, poi su un Mac (o con il
-tag su GitHub):
+**Pubblicare una nuova versione:** aggiorna `VERSION` e `CHANGELOG.md`
+(sezione `## <versione> — data`), fai commit e crea il tag:
+
+```bash
+git tag v1.4.0 && git push origin main v1.4.0
+```
+
+La compilazione su GitHub esegue i test, crea l'app e il DMG, prova
+l'aggiornamento automatico su un Mac e pubblica la Release (DMG + `.sha256`,
+note prese dal CHANGELOG). Le app installate la vedranno entro un giorno.
+
+Compilare a mano su un Mac:
 
 ```bash
 bash scripts/build-rclone.sh
-bash scripts/build-mac-app.sh      # -> dist/MIMUS-<versione>.dmg
+bash scripts/build-mac-app.sh      # -> dist/MIMUS-<versione>.dmg (+ .sha256)
 ```
 
 Su Linux servono anche `rcodesign`, `mkfs.hfsplus` e `libdmg-hfsplus`

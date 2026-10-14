@@ -125,12 +125,12 @@ FIG = {
     "menu": choose_list(["Stato: attivo – cartella collegata", "2 modifiche fatte offline in attesa"],
                         ["Apri cartella", "Aggiorna cartelle", "Stato dettagliato", "Riavvia collegamento",
                          "Ferma collegamento", "Ultimi errori", "Apri log", "Log dettagliato (diagnosi) on/off",
-                         "Impostazioni", "Guida", "Disinstalla"]),
+                         "Impostazioni", "Controlla aggiornamenti", "Guida", "Disinstalla"]),
     "settings": choose_list(["Impostazioni: scegli cosa cambiare.", "Le modifiche vengono applicate quando premi «Fine»."],
                             ["Server remoto: 192.168.1.10", "Cartella remota: Tecnico", "Utente: m.rossi (dominio WORKGROUP)",
                              "Password: ••••••", "Cartella nel Finder: ~/Tecnico", "File tenuti sul Mac in: ~/Library/…/MIMUS/cache",
                              "Togli dal Mac i file non usati da: 30 giorni", "Spazio minimo libero sul disco: 10 GB",
-                             "Novità dei colleghi visibili entro: 5 minuti"], sel=6, w=500, ok_label="Modifica", cancel_label="Fine"),
+                             "Novità dei colleghi visibili entro: 5 minuti", "Aggiornamenti automatici di MIMUS: sì"], sel=6, w=500, ok_label="Modifica", cancel_label="Fine"),
     "conflict": dialog(["«Commesse/C123/Offerta.docx» è stato modificato in remoto",
                         "da qualcun altro mentre lo modificavi anche tu.", "",
                         "Versione remota: 13/10/2026 15:42, 48 KB", "",
@@ -343,6 +343,7 @@ footer {{ color: var(--muted); font-size: 13px; text-align: center; padding: 0 0
     <tr><td>Ultimi errori, Apri log</td><td>per l’ufficio IT</td></tr>
     <tr><td>Log dettagliato</td><td>da attivare solo se te lo chiede l’IT</td></tr>
     <tr><td>Impostazioni</td><td>tutte le impostazioni (vedi sotto)</td></tr>
+    <tr><td>Controlla aggiornamenti</td><td>cerca subito una versione nuova di MIMUS</td></tr>
     <tr><td>Guida</td><td>apre questa guida</td></tr>
     <tr><td>Disinstalla</td><td>toglie il collegamento dal Mac</td></tr>
   </table>
@@ -360,6 +361,7 @@ footer {{ color: var(--muted); font-size: 13px; text-align: center; padding: 0 0
     <tr><td>File tenuti sul Mac in</td><td>dove salvare le copie dei file remoti e le modifiche fatte offline, per esempio su un disco più capiente</td></tr>
     <tr><td>Togli dal Mac i file non usati da</td><td>dopo quanti giorni un file non aperto viene tolto dal Mac (sempre e solo se è al sicuro sul server remoto)</td></tr>
     <tr><td>Spazio minimo libero</td><td>quanti GB lasciare sempre liberi sul disco</td></tr>
+    <tr><td>Aggiornamenti automatici di MIMUS</td><td>sì/no: controllo giornaliero delle nuove versioni</td></tr>
     <tr><td>Novità dei colleghi visibili entro</td><td>ogni quanti minuti controllare le modifiche fatte da altri (valori bassi = più richieste al server remoto)</td></tr>
   </table>
   <div class="note">Server, cartella condivisa e posizione dei file si possono cambiare solo quando non ci sono modifiche in attesa di essere caricate: altrimenti l’app te lo dice e salva solo le altre impostazioni.
@@ -369,7 +371,8 @@ footer {{ color: var(--muted); font-size: 13px; text-align: center; padding: 0 0
 <section id="aggiorna">
   <h2>Aggiornare e disinstallare</h2>
   <h3>Nuova versione</h3>
-  <p>Apri il nuovo DMG, trascina l’app in Applicazioni e scegli <strong>Sostituisci</strong>. Poi apri l’app una volta: il collegamento si aggiorna e riparte da solo. Configurazione, file sul Mac e modifiche in attesa restano.</p>
+  <p>MIMUS controlla da sola se c’è una versione nuova (quando la apri e una volta al giorno). Se c’è ti mostra le novità: premi <strong>Aggiorna</strong> e fa tutto lei: scarica, verifica che il file sia integro, sostituisce l’app e riavvia il collegamento. Configurazione, file sul Mac e modifiche in attesa restano.</p>
+  <p>Puoi controllare anche a mano (menu → <em>Controlla aggiornamenti</em>) o disattivare il controllo automatico in <a href="#impostazioni">Impostazioni</a>. In alternativa scarica il DMG dalla pagina del progetto su GitHub, trascina l’app in Applicazioni scegliendo <strong>Sostituisci</strong> e aprila una volta.</p>
   <h3>Disinstallare</h3>
   <p>App → <em>Disinstalla</em>. Se ci sono modifiche non ancora caricate sul server remoto l’app si rifiuta, per non perderle: collegati al server remoto e riprova. Alla fine trascina l’app dalla cartella Applicazioni nel Cestino.</p>
 </section>
@@ -400,6 +403,7 @@ footer {{ color: var(--muted); font-size: 13px; text-align: center; padding: 0 0
     <tr><th>Cosa</th><th>Dove</th></tr>
     <tr><td>App (contiene anche rclone-mimus)</td><td><code>/Applications/MIMUS.app</code></td></tr>
     <tr><td>Avvio automatico</td><td><code>~/Library/LaunchAgents/app.mimus.agent.plist</code> (scritto dall’app)</td></tr>
+    <tr><td>Controllo aggiornamenti</td><td><code>~/Library/LaunchAgents/app.mimus.update.plist</code>, una volta al giorno; legge le Release di <code>github.com/ranzaWARE/mimus</code></td></tr>
     <tr><td>Impostazioni (<code>settings.json</code>)</td><td><code>~/Library/Application Support/MIMUS/</code></td></tr>
     <tr><td>Cache e coda offline</td><td><code>~/Library/Application Support/MIMUS/cache</code> o la posizione scelta nelle Impostazioni</td></tr>
     <tr><td>Modifiche offline rifiutate dal server remoto</td><td><code>…/cache/offline/mimus/*/journal-failed.json</code></td></tr>

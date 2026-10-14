@@ -3,6 +3,17 @@
 Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
 `rclone-mimus version` (es. `v1.72.0-mimus-1.0.0`).
 
+## 1.4.0 — 2026-10-14
+
+- **Aggiornamenti automatici da GitHub**: MIMUS controlla le nuove versioni
+  quando la apri e una volta al giorno in background. Se ce n'è una nuova
+  mostra le novità e, con «Aggiorna», scarica il DMG, ne verifica l'integrità
+  (SHA-256), sostituisce l'app e riavvia il collegamento da solo. Non serve
+  la password di amministratore se l'app è stata installata dal tuo utente.
+- Menu: «Controlla aggiornamenti». Impostazioni: aggiornamenti automatici sì/no.
+- La compilazione su GitHub pubblica il DMG con il file `.sha256` e prova
+  l'aggiornamento su un Mac vero prima di ogni rilascio.
+
 ## 1.3.2 — 2026-10-14
 
 - Nei testi dell'app non compare più «NAS»: si parla di **server remoto** e

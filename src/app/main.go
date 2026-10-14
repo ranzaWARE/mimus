@@ -25,6 +25,11 @@ func main() {
 		return
 	}
 	p := getPaths()
+	if len(os.Args) > 1 && os.Args[1] == "--check-update" { // daily agent
+		backgroundCheck(p)
+		return
+	}
+	offer := len(os.Args) > 1 && os.Args[1] == "--offer-update"
 
 	// opened from the DMG or from Downloads (macOS "translocation"): the
 	// service would point to a temporary copy
@@ -35,6 +40,11 @@ func main() {
 	if _, err := os.Stat(p.rclone); err != nil {
 		info("L'app è incompleta (manca rclone-mimus). Scaricala di nuovo.")
 		return
+	}
+	if offer { // opened by the daily check: an update is available
+		if r, ok := availableUpdate(20 * time.Second); ok && offerUpdate(p, r) {
+			return // the new version has been started
+		}
 	}
 
 	s, ok := loadSettings(p)
@@ -52,6 +62,12 @@ func main() {
 		}
 	} else {
 		upgrade(p, &s)
+	}
+	setUpdater(p, !s.NoAutoUpdate)
+	if !offer && !s.NoAutoUpdate {
+		if r, ok := availableUpdate(5 * time.Second); ok && offerUpdate(p, r) {
+			return // the new version has been started
+		}
 	}
 	menu(p, &s)
 }
@@ -345,7 +361,7 @@ func menu(p paths, s *settings) {
 		items := []string{
 			"Apri cartella", "Aggiorna cartelle", "Stato dettagliato",
 			"Riavvia collegamento", toggle, "Ultimi errori", "Apri log",
-			"Log dettagliato (diagnosi) on/off", "Impostazioni", "Guida", "Disinstalla",
+			"Log dettagliato (diagnosi) on/off", "Impostazioni", "Controlla aggiornamenti", "Guida", "Disinstalla",
 		}
 		switch choose(statusText(p, *s, running), items, "Esegui", "Esci") {
 		case "":
@@ -387,6 +403,10 @@ func menu(p paths, s *settings) {
 			toggleDebug(p, s)
 		case "Impostazioni":
 			p = settingsMenu(p, s)
+		case "Controlla aggiornamenti":
+			if checkForUpdates(p) {
+				return
+			}
 		case "Guida":
 			_, _ = run("open", filepath.Join(p.bundle, "Contents", "Resources", "Guida.html"))
 		case "Disinstalla":
@@ -515,6 +535,7 @@ func uninstall(p paths) bool {
 	}
 	stopAgent(p)
 	_ = os.Remove(p.plist)
+	setUpdater(p, false)
 	if dialog("Cancellare anche i file remoti tenuti sul Mac, la configurazione e la password salvata?", "Tieni", "Tieni", "Cancella tutto") == "Cancella tutto" {
 		_ = os.RemoveAll(p.cache) // anche se spostata fuori da Application Support
 		_ = os.RemoveAll(p.appSupport)

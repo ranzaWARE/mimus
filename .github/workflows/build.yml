@@ -22,13 +22,27 @@ jobs:
         run: bash scripts/build-rclone.sh
       - name: App e DMG (con test dell'app)
         run: bash scripts/build-mac-app.sh
+      - name: Prova dell'aggiornamento automatico
+        run: bash tests/update-macos.sh
       - uses: actions/upload-artifact@v4
         with:
           name: MIMUS-dmg
-          path: dist/*.dmg
+          path: |
+            dist/*.dmg
+            dist/*.sha256
+      - name: Note di rilascio (dal CHANGELOG)
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          V="$(cat VERSION)"
+          [ "${GITHUB_REF_NAME}" = "v$V" ] || { echo "il tag ${GITHUB_REF_NAME} non corrisponde a VERSION ($V)"; exit 1; }
+          awk -v v="$V" '/^## /{ if (p) exit; if (index($0, "## " v " ") == 1 || $0 == "## " v) { p = 1; next } } p' CHANGELOG.md > notes.md
+          { echo; cat .github/release-notes.md; } >> notes.md
+          cat notes.md
       - name: Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/*.dmg
-          body_path: .github/release-notes.md
+          files: |
+            dist/*.dmg
+            dist/*.sha256
+          body_path: notes.md
