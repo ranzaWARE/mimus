@@ -22,6 +22,9 @@ else
 fi
 cd "$WORK/rclone"
 
+# dipendenze nella cartella vendor: alcune patch correggono anche quelle
+[ -d vendor ] || go mod vendor
+export GOFLAGS=-mod=vendor
 for P in "$ROOT"/src/patches/*.patch; do git apply "$P"; done
 mkdir -p backend/offline
 cp "$ROOT"/src/offline/*.go backend/offline/
