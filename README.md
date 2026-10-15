@@ -82,15 +82,12 @@ Diagnostica da Terminale: `bash scripts/status.sh`.
 | `.github/workflows/build.yml` | a ogni tag `v*` compila, testa e produce il DMG |
 
 **Pubblicare una nuova versione:** aggiorna `VERSION` e `CHANGELOG.md`
-(sezione `## <versione> — data`), fai commit e crea il tag:
-
-```bash
-git tag v1.4.0 && git push origin main v1.4.0
-```
-
-La compilazione su GitHub esegue i test, crea l'app e il DMG, prova
-l'aggiornamento automatico su un Mac e pubblica la Release (DMG + `.sha256`,
-note prese dal CHANGELOG). Le app installate la vedranno entro un giorno.
+(sezione `## <versione> — data`), fai commit e push su `main`. La compilazione
+su GitHub esegue i test, crea l'app e il DMG, prova l'aggiornamento automatico
+su un Mac e, visto che quella versione non è ancora pubblicata, crea da sola il
+tag `v<versione>` e la Release (DMG + `.sha256`, note prese dal CHANGELOG).
+Le app installate la vedranno entro un giorno. (Funziona anche creando a mano
+il tag `v<versione>`.)
 
 Compilare a mano su un Mac:
 
