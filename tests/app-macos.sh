@@ -28,8 +28,8 @@ healthy(){ mount | grep -q " on $LINK " && to 5 cat "$LINK/Doc/a.txt" 2>/dev/nul
 diag(){ echo "::warning title=app-macos $1::$( { echo "mount:"; mount | grep -i "lavoro\|localhost"; echo "agent:"; launchctl print "gui/$(id -u)/app.mimus.agent" 2>&1 | grep -E 'state|pid|last exit'; echo "log:"; tail -n 15 "$LOG"; } | enc)"; }
 
 # --- Samba ---
-SMBD="$(command -v smbd || ls /opt/homebrew/sbin/smbd /usr/local/sbin/smbd 2>/dev/null | head -1)"
-SMBPASSWD="$(command -v smbpasswd || ls /opt/homebrew/bin/smbpasswd /usr/local/bin/smbpasswd 2>/dev/null | head -1)"
+BP="$(brew --prefix samba 2>/dev/null)"
+SMBD="$BP/sbin/smbd"; SMBPASSWD="$BP/bin/smbpasswd"
 [ -x "$SMBD" ] || { echo "::error::manca smbd (brew install samba)"; exit 1; }
 cat > "$T/smb.conf" <<EOF
 [global]

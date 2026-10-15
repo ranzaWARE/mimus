@@ -79,10 +79,14 @@ PID=$!
 for _ in $(seq 60); do mount | grep -q " on $M " && break; sleep 0.5; done
 open "$M"; sleep 15
 FL="$HOME/Library/Containers/app.mimus.finder/Data/tmp/mimus-finder.log"
-AFTER="$(sed -n '/collegamento ripartito/,$p' "$FL" 2>/dev/null | tail -n 8)"
 P2="$(pgrep -f MIMUSFinder | tr '\n' ' ')"
-echo "dopo il riavvio:"; echo "$AFTER"
-echo "::notice title=pallini dopo il riavvio del collegamento::estensione prima: $P1 dopo: $P2%0A$(tail -n 14 "$FL" 2>&1 | enc)"
-case "$AFTER" in *"collegamento ripartito"*"locale.txt=local"*) echo "  OK   pallini rimessi dopo il riavvio";;
-    *) echo "::warning title=finder::pallini non rimessi dopo il riavvio del collegamento";; esac
+echo "::notice title=finder 1 dopo il riavvio (nessun intervento)::prima: $P1 dopo: $P2%0A$(tail -n 6 "$FL" 2>&1 | enc)"
+# rimedio A: l'estensione viene chiusa (il Finder la riapre?)
+pkill -f MIMUSFinder; sleep 2; open "$M"; sleep 12
+P3="$(pgrep -f MIMUSFinder | tr '\n' ' ')"
+echo "::notice title=finder 2 dopo pkill::processo: $P3%0A$(tail -n 6 "$FL" 2>&1 | enc)"
+# rimedio B: spenta e riaccesa con pluginkit
+pluginkit -e ignore -i app.mimus.finder; sleep 2; pluginkit -e use -i app.mimus.finder; sleep 2; open "$M"; sleep 12
+P4="$(pgrep -f MIMUSFinder | tr '\n' ' ')"
+echo "::notice title=finder 3 dopo pluginkit::processo: $P4%0A$(tail -n 6 "$FL" 2>&1 | enc)"
 exit $FAILS
