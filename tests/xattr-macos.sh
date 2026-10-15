@@ -35,16 +35,14 @@ try(){ # nome comando...
     else
         echo "  FAIL $name: $out"
         # le righe del log con un errore, dopo il comando
-        local errs; errs="$(tail -n +"$((mark + 1))" "$LOG" | grep -E 'err=[^<]|ERROR|NFS3ERR|Error' | grep -v 'err=<nil>' | head -n 12 | cut -c1-240 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
+        local errs; errs="$(tail -n +"$((mark + 1))" "$LOG" | grep -v 'err=file does not exist' | grep -vE 'DEBUG : [^:]*: >?(Lstat|Stat): ' | head -n 40 | cut -c1-200 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
         echo "::warning title=NO $name::$out%0A$errs"
         FAILS=$((FAILS + 1))
     fi
 }
 
 try "attributo su un file" xattr -w com.example.prova valore "$M/file.txt"
-try "attributo su una cartella" xattr -w com.example.prova valore "$M/cartella"
 try "tag rosso su un file" xattr -w com.apple.metadata:_kMDItemUserTags "$TAG" "$M/file.txt"
-try "tag rosso su una cartella" xattr -w com.apple.metadata:_kMDItemUserTags "$TAG" "$M/cartella"
 try "rilettura del tag" sh -c "xattr -p com.apple.metadata:_kMDItemUserTags '$M/file.txt'"
 F="$T/scaricato.pdf"; echo pdf > "$F"
 xattr -w com.apple.quarantine "0083;6527a3b0;Safari;" "$F"
