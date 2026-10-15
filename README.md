@@ -25,18 +25,18 @@ Niente da imparare: è una cartella.
 
 ## ✨ Cosa sa fare
 
-| | |
-|---|---|
-| 🗂️ **Tutta la struttura, sempre** | Vedi tutte le cartelle del server anche offline e dopo un riavvio. |
-| ⚡ **File al volo** | I file si scaricano quando li apri e restano sul Mac: la volta dopo si aprono a velocità di disco (150–300 MB/s). |
-| ✈️ **Offline senza pensieri** | Modifichi, crei, rinomini, cancelli: MIMUS mette tutto in coda e lo applica sul server quando torni in rete, nell'ordine giusto. |
-| 🤝 **Conflitti chiari** | Se un collega ha cambiato lo stesso file, ti chiede cosa fare: *Scarta la mia*, *Tieni entrambe* o *Sovrascrivi*. Senza risposta vale sempre la scelta che non perde dati. |
-| 👀 **Novità dei colleghi in pochi secondi** | Le cartelle che stai guardando si aggiornano da sole in circa 15 secondi, e il Finder le ridisegna senza dover uscire e rientrare. |
-| 🟢 **Sai sempre dove sta un file** | Un pallino su ogni file: sul Mac, solo sul server, sempre sul Mac, da caricare. |
-| 📌 **Scarica, tieni, libera spazio** | Tasto destro: *Scarica ora*, *Mantieni sempre su questo Mac* (anche cartelle intere, file nuovi compresi), *Togli da questo Mac*. |
-| 🧹 **Pulizia intelligente** | I file che non apri da 30 giorni lasciano il Mac, ma solo se sono al sicuro sul server. Resta sempre libero lo spazio che scegli. |
-| 🔐 **Password scaduta? Nessun blocco** | Al primo rifiuto smette di riprovare (l'account non si blocca) e ti chiede la nuova password. |
-| 🔄 **Si aggiorna da solo** | Controlla le nuove versioni, verifica l'integrità del pacchetto e si aggiorna con un clic. |
+<table>
+  <tr><td width="32%">🗂️ <b>Tutta la struttura, sempre</b></td><td>Vedi tutte le cartelle del server anche offline e dopo un riavvio.</td></tr>
+  <tr><td width="32%">⚡ <b>File al volo</b></td><td>I file si scaricano quando li apri e restano sul Mac: la volta dopo si aprono a velocità di disco (150–300 MB/s).</td></tr>
+  <tr><td width="32%">✈️ <b>Offline senza pensieri</b></td><td>Modifichi, crei, rinomini, cancelli: MIMUS mette tutto in coda e lo applica sul server quando torni in rete, nell'ordine giusto.</td></tr>
+  <tr><td width="32%">🤝 <b>Conflitti chiari</b></td><td>Se un collega ha cambiato lo stesso file, ti chiede cosa fare: <i>Scarta la mia</i>, <i>Tieni entrambe</i> o <i>Sovrascrivi</i>. Senza risposta vale sempre la scelta che non perde dati.</td></tr>
+  <tr><td width="32%">👀 <b>Novità dei colleghi in pochi secondi</b></td><td>Le cartelle che stai guardando si aggiornano da sole in circa 15 secondi, e il Finder le ridisegna senza dover uscire e rientrare.</td></tr>
+  <tr><td width="32%">🟢 <b>Sai sempre dove sta un file</b></td><td>Un pallino su ogni file: sul Mac, solo sul server, sempre sul Mac, da caricare.</td></tr>
+  <tr><td width="32%">📌 <b>Scarica, tieni, libera spazio</b></td><td>Tasto destro: <i>Scarica ora</i>, <i>Mantieni sempre su questo Mac</i> (anche cartelle intere, file nuovi compresi), <i>Togli da questo Mac</i>.</td></tr>
+  <tr><td width="32%">🧹 <b>Pulizia intelligente</b></td><td>I file che non apri da 30 giorni lasciano il Mac, ma solo se sono al sicuro sul server. Resta sempre libero lo spazio che scegli.</td></tr>
+  <tr><td width="32%">🔐 <b>Password scaduta? Nessun blocco</b></td><td>Al primo rifiuto smette di riprovare (l'account non si blocca) e ti chiede la nuova password.</td></tr>
+  <tr><td width="32%">🔄 <b>Si aggiorna da solo</b></td><td>Controlla le nuove versioni, verifica l'integrità del pacchetto e si aggiorna con un clic.</td></tr>
+</table>
 
 ## 🦖 Il dinosauro ti dice tutto
 
@@ -81,12 +81,12 @@ Vive nella barra dei menu, dello stesso colore delle icone di sistema (chiaro o 
   <tr>
     <td width="45%" valign="top">
 
-| | |
-|:-:|---|
-| <img src="docs/img/badge-remote.svg" width="22"> | **Solo sul server**: si scarica quando lo apri |
-| <img src="docs/img/badge-local.svg" width="22"> | **Su questo Mac**: si apre anche offline |
-| <img src="docs/img/badge-pinned.svg" width="22"> | **Sempre su questo Mac**: non viene mai tolto |
-| <img src="docs/img/badge-upload.svg" width="22"> | **Da caricare**: modificato qui, parte da solo |
+<table>
+  <tr><td align="center"><img src="docs/img/badge-remote.svg" width="22"></td><td><b>Solo sul server</b>: si scarica quando lo apri</td></tr>
+  <tr><td align="center"><img src="docs/img/badge-local.svg" width="22"></td><td><b>Su questo Mac</b>: si apre anche offline</td></tr>
+  <tr><td align="center"><img src="docs/img/badge-pinned.svg" width="22"></td><td><b>Sempre su questo Mac</b>: non viene mai tolto</td></tr>
+  <tr><td align="center"><img src="docs/img/badge-upload.svg" width="22"></td><td><b>Da caricare</b>: modificato qui, parte da solo</td></tr>
+</table>
 
 Se un collega rinomina un file che hai sul Mac, la copia segue il nuovo nome: niente da riscaricare.
 
