@@ -67,6 +67,7 @@ type settings struct {
 	MountPath     string `json:"mount_path"`     // cartella collegata nel Finder
 	CacheDir      string `json:"cache_dir"`      // dove stanno i file tenuti sul Mac e la coda offline
 	NoAutoUpdate  bool   `json:"no_auto_update"` // non controllare da solo gli aggiornamenti
+	NoMenuIcon    bool   `json:"no_menu_icon"`   // niente icona nella barra dei menu
 }
 
 // defaults fills the missing values

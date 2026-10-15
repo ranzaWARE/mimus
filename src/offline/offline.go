@@ -26,6 +26,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/rclone/rclone/fs"
@@ -153,6 +154,9 @@ type Fs struct {
 	walkWake   chan struct{}
 	orphans    sync.Map
 	lnOnce     sync.Once // «Rete locale» hint shown once
+	replaying  atomic.Bool
+	walking    atomic.Bool
+	diskLow    atomic.Bool
 
 	bgCtx  context.Context
 	cancel context.CancelFunc
@@ -207,6 +211,7 @@ func NewFs(ctx context.Context, name, rpath string, m configmap.Mapper) (fs.Fs, 
 	cache.PinUntilFinalized(baseFs, f)
 
 	if err == nil {
+		active.Store(f, struct{}{})
 		bg := f.bgCtx
 		f.probeOnce() // know the state before the first operation
 		if opt.Probe != "" {
@@ -523,6 +528,7 @@ func (f *Fs) About(ctx context.Context) (*fs.Usage, error) {
 
 // Shutdown stops the background tasks
 func (f *Fs) Shutdown(ctx context.Context) error {
+	active.Delete(f)
 	if f.cancel != nil {
 		f.cancel()
 		f.wg.Wait()

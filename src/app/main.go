@@ -64,6 +64,7 @@ func main() {
 		upgrade(p, &s)
 	}
 	setUpdater(p, !s.NoAutoUpdate)
+	setMenuIcon(p, !s.NoMenuIcon)
 	if !offer && !s.NoAutoUpdate {
 		if r, ok := availableUpdate(5 * time.Second); ok && offerUpdate(p, r) {
 			return // the new version has been started
@@ -536,6 +537,7 @@ func uninstall(p paths) bool {
 	stopAgent(p)
 	_ = os.Remove(p.plist)
 	setUpdater(p, false)
+	setMenuIcon(p, false)
 	if dialog("Cancellare anche i file remoti tenuti sul Mac, la configurazione e la password salvata?", "Tieni", "Tieni", "Cancella tutto") == "Cancella tutto" {
 		_ = os.RemoveAll(p.cache) // anche se spostata fuori da Application Support
 		_ = os.RemoveAll(p.appSupport)

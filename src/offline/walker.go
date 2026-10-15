@@ -66,6 +66,8 @@ func (f *Fs) maybeWalk(ctx context.Context) {
 }
 
 func (f *Fs) walk(ctx context.Context) (int, error) {
+	f.walking.Store(true)
+	defer f.walking.Store(false)
 	start := time.Now()
 	workers := max(f.opt.WalkWorkers, 1)
 	pace := time.Duration(f.opt.WalkPace)

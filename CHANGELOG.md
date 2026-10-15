@@ -3,6 +3,22 @@
 Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
 `rclone-mimus version` (es. `v1.72.0-mimus-1.0.0`).
 
+## 1.5.0 — 2026-10-15
+
+- **Icona nella barra dei menu**: il Gallimimus di MIMUS in alto a destra,
+  dello stesso colore delle icone di sistema (chiara o scura a seconda della barra).
+  - dorme (Z Z Z): tutto sincronizzato, oppure offline;
+  - corre: sta caricando o scaricando file, applicando le modifiche fatte
+    offline o aggiornando l'elenco delle cartelle;
+  - «!»: c'è un problema (password non accettata, modifiche rifiutate dal
+    server remoto, disco quasi pieno, collegamento fermo, cartella non collegata).
+  Cliccandola: lo stato in parole, Apri cartella, Aggiorna cartelle, Apri MIMUS,
+  Guida, Nascondi l'icona. Parte da sola a ogni accesso; Impostazioni:
+  «Icona nella barra dei menu» sì/no.
+- Il servizio espone lo stato a uso dell'icona (rc `mimus/status`, solo su
+  127.0.0.1).
+- Guida: nuova sezione sull'icona.
+
 ## 1.4.0 — 2026-10-14
 
 - **Aggiornamenti automatici da GitHub**: MIMUS controlla le nuove versioni

@@ -274,3 +274,34 @@ func TestShortHashStable(t *testing.T) {
 		t.Fatalf("shortHash = %s", got)
 	}
 }
+
+func TestRcStatus(t *testing.T) {
+	ctx := context.Background()
+	f, _, setOnline := newTestFs(t)
+	get := func() map[string]any {
+		out, err := rcStatus(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	st := get()
+	if st["online"] != true || st["journal"] != 0 || st["problem"] != "" || st["remotes"].(int) < 1 {
+		t.Fatalf("online status = %v", st)
+	}
+	setOnline(false)
+	must(t, f.Mkdir(ctx, "nuova"))
+	st = get()
+	if st["online"] != false || st["journal"] != 1 {
+		t.Fatalf("offline status = %v", st)
+	}
+	f.stateMu.Lock()
+	f.authFailed = true
+	f.stateMu.Unlock()
+	if p := get()["problem"].(string); !strings.Contains(p, "password") {
+		t.Fatalf("problem = %q", p)
+	}
+	f.stateMu.Lock()
+	f.authFailed = false
+	f.stateMu.Unlock()
+}

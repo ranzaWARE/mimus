@@ -5,6 +5,8 @@
 # mkfs.hfsplus + libdmg-hfsplus: DMG_TOOLS = cartella con "hfsplus" e "dmg").
 #   bash scripts/build-mac-app.sh
 # Output: build/MIMUS.app e dist/MIMUS-<versione>.dmg
+# L'icona nella barra dei menu (Swift) si compila solo su macOS con gli
+# strumenti di Xcode: altrove l'app viene creata senza (REQUIRE_MENU=1: errore).
 
 set -e
 cd "$(dirname "$0")/.."
@@ -39,8 +41,45 @@ python3 packaging/make-guide.py "$VERSION" >/dev/null
 cp packaging/Guida.html "$APP/Contents/Resources/"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
+# 2b. icona nella barra dei menu: MIMUS.app/Contents/Library/LoginItems/MIMUS Menu.app
+HELPER="$APP/Contents/Library/LoginItems/MIMUS Menu.app"
+if command -v swiftc >/dev/null && command -v xcrun >/dev/null; then
+    SDK="$(xcrun --sdk macosx --show-sdk-path)"
+    for ARCH in arm64 x86_64; do
+        LOG="$B/swiftc-$ARCH.log"
+        if ! swiftc -O -swift-version 5 -sdk "$SDK" -target "$ARCH-apple-macos11" \
+                -o "$B/MIMUSMenu-$ARCH" src/menubar/main.swift > "$LOG" 2>&1; then
+            cat "$LOG"
+            # errori come annotazioni di GitHub Actions
+            sed -nE 's#^.*(src/menubar/[^:]+):([0-9]+):([0-9]+): error: (.*)$#::error file=\1,line=\2,col=\3::\4#p' "$LOG"
+            exit 1
+        fi
+        cat "$LOG"
+        if [ "$ARCH" = arm64 ] && [ -n "${GITHUB_ACTIONS:-}" ]; then
+            sed -nE 's#^.*(src/menubar/[^:]+):([0-9]+):([0-9]+): warning: (.*)$#::warning file=\1,line=\2,col=\3::\4#p' "$LOG"
+        fi
+    done
+    mkdir -p "$HELPER/Contents/MacOS" "$HELPER/Contents/Resources"
+    universal "$HELPER/Contents/MacOS/MIMUSMenu" "$B/MIMUSMenu-arm64" "$B/MIMUSMenu-x86_64"
+    chmod 755 "$HELPER/Contents/MacOS/MIMUSMenu"
+    sed "s/__VERSION__/$VERSION/g" packaging/MenuInfo.plist > "$HELPER/Contents/Info.plist"
+    for f in packaging/menubar/*.png; do
+        case "$(basename "$f")" in preview*) continue;; esac
+        cp "$f" "$HELPER/Contents/Resources/menubar-$(basename "$f")"
+    done
+    cp packaging/AppIcon.icns "$HELPER/Contents/Resources/"
+    printf 'APPL????' > "$HELPER/Contents/PkgInfo"
+    "$HELPER/Contents/MacOS/MIMUSMenu" --selftest
+elif [ -n "${REQUIRE_MENU:-}" ]; then
+    echo "::error::swiftc non trovato: serve per l'icona nella barra dei menu" >&2
+    exit 1
+else
+    echo "attenzione: swiftc non trovato, app senza icona nella barra dei menu" >&2
+fi
+
 # 3. firma ad-hoc (senza Developer ID Apple: al primo avvio macOS chiede conferma)
 if command -v codesign >/dev/null; then
+    [ -d "$HELPER" ] && codesign --force --sign - "$HELPER"
     codesign --force --deep --sign - "$APP"
 else
     rcodesign sign "$APP" >/dev/null

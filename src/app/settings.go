@@ -33,6 +33,9 @@ func settingsMenu(p paths, s *settings) paths {
 			fmt.Sprintf("Novità dei colleghi visibili entro: %d minuti", s.RefreshMin),
 			"Aggiornamenti automatici di MIMUS: " + yesNo(!s.NoAutoUpdate),
 		}
+		if hasMenuHelper(p) {
+			items = append(items, "Icona nella barra dei menu: "+yesNo(!s.NoMenuIcon))
+		}
 		c := choose("Impostazioni: scegli cosa cambiare.\nLe modifiche vengono applicate quando premi «Fine».", items, "Modifica", "Fine")
 		switch {
 		case c == "":
@@ -102,6 +105,11 @@ func settingsMenu(p paths, s *settings) paths {
 			orig.NoAutoUpdate = s.NoAutoUpdate
 			_ = saveSettings(p, *s)
 			setUpdater(p, !s.NoAutoUpdate)
+		case strings.HasPrefix(c, "Icona nella barra"):
+			s.NoMenuIcon = !s.NoMenuIcon
+			orig.NoMenuIcon = s.NoMenuIcon
+			_ = saveSettings(p, *s)
+			setMenuIcon(p, !s.NoMenuIcon)
 		case strings.HasPrefix(c, "Novità"):
 			s.RefreshMin = askNumber("Entro quanti minuti vedere le modifiche fatte dai colleghi?\n(Valori bassi = più richieste al server remoto.)", s.RefreshMin, 1, 120)
 		}

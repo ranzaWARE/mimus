@@ -66,7 +66,7 @@ for f in X Y G I A C N Z W; do echo "originale $f" > $S/Doc/$f.txt; done
 echo e > $S/Dir/E/e.txt
 startm(){ ($R mount mimus: $M --cache-dir $T/cache --vfs-cache-mode full --vfs-write-back 2s \
     --dir-cache-time 10s --contimeout 3s --vfs-cache-poll-interval 5s $EXTRA \
-    --log-file $T/mount.log --log-level INFO &)
+    --rc --rc-addr 127.0.0.1:5573 --log-file $T/mount.log --log-level INFO &)
   for i in $(seq 30); do mount | grep -q "on $M " && break; sleep 0.5; done; sleep 1; }
 startm
 
@@ -95,8 +95,11 @@ ok "Y sovrascritto con la mia" "grep -q 'mia Y' $S/Doc/Y.txt && ! grep -q 'colle
 sleep 12; ok "X dal Mac = collega" "grep -q 'collega X' $M/Doc/X.txt"
 
 echo "== 3. coda offline"
+st(){ curl -s -X POST http://127.0.0.1:5573/mimus/status; }
+ok "stato: online" "st | grep -q '\"online\": true'"
 ls -R $M >/dev/null; sleep 1; srv_off
 mv $M/Doc/A.txt $M/Doc/A2.txt; rm $M/Doc/C.txt; mkdir $M/Nuova; mv $M/Dir/E $M/Dir/E2
+sleep 4; ok "stato: offline con 4 modifiche in coda" "st | grep -q '\"online\": false' && st | grep -q '\"journal\": 4'"
 srv_on; sleep 15
 ok "rinomina file" "[ -f $S/Doc/A2.txt ] && [ ! -f $S/Doc/A.txt ]"
 ok "cancellazione" "[ ! -f $S/Doc/C.txt ]"

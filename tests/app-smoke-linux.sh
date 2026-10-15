@@ -18,6 +18,9 @@ ok(){ if eval "$2"; then echo "  OK   $1"; else echo "  FAIL $1"; FAILS=$((FAILS
 
 (cd "$ROOT/src/app" && CGO_ENABLED=0 go build -ldflags "-X main.appVersion=$(cat "$ROOT/VERSION")" -o "$MAC/MIMUS" .) || exit 1
 cp "$RCL" "$MAC/rclone-mimus"
+# finta icona nella barra dei menu (quella vera è in Swift, solo su macOS)
+H="$APP/Contents/Library/LoginItems/MIMUS Menu.app/Contents/MacOS"; mkdir -p "$H"
+printf '#!/bin/bash\n' > "$H/MIMUSMenu"; chmod +x "$H/MIMUSMenu"
 
 # --- Samba ---
 cat > $T/smb.conf <<EOF
@@ -68,6 +71,14 @@ case "$*" in
       print) [ -f $D/upd ] || exit 113; echo "state = not running";;
       bootstrap) touch $D/upd;;
       bootout) [ -f $D/upd ] || exit 3; rm -f $D/upd;;
+    esac
+    exit 0;;
+  *app.mimus.menu*) # icona nella barra dei menu: solo registrata
+    echo "$1" >> $D/menu.log
+    case "$1" in
+      print) [ -f $D/menu ] || exit 113; echo "state = running";;
+      bootstrap) touch $D/menu;;
+      bootout) [ -f $D/menu ] || exit 3; rm -f $D/menu;;
     esac
     exit 0;;
 esac
@@ -134,6 +145,8 @@ ok "niente .DS_Store sui volumi di rete" "grep -q DSDontWriteNetworkStores $T/cm
 U=$HOME/Library/LaunchAgents/app.mimus.update.plist
 ok "controllo aggiornamenti giornaliero attivo" "grep -q -- '--check-update' '$U' && [ -f $HOME/.fake-launchd/upd ]"
 ok "nessuna proposta di aggiornamento (già aggiornata)" "! grep -q 'disponibile' $T/ui.log"
+M=$HOME/Library/LaunchAgents/app.mimus.menu.plist
+ok "icona nella barra dei menu attiva" "grep -q 'LoginItems/MIMUS Menu.app/Contents/MacOS/MIMUSMenu' '$M' && [ -f $HOME/.fake-launchd/menu ]"
 
 echo "== riapertura con versione nuova: servizio aggiornato e riavviato"
 sed -i 's/"version": "[^"]*"/"version": "0.9"/' "$HOME/Library/Application Support/MIMUS/settings.json"
@@ -143,6 +156,7 @@ timeout 60 "$MAC/MIMUS"
 ok "nessuna nuova configurazione" "[ \$(grep -c 'Benvenuto' $T/ui.log) -eq 1 ]"
 ok "servizio riavviato" "[ \"\$(cat $HOME/.fake-launchd/pid)\" != \"$OLDPID\" ]"
 sleep 3; ok "cartella di nuovo collegata" "[ -f $HOME/Lavoro/Doc/a.txt ]"
+ok "icona rimostrata se era nascosta" "grep -q kickstart $HOME/.fake-launchd/menu.log"
 
 echo "== aggiornamento da 1.3.1 (vecchi nomi nas/nasoffline)"
 R="$MAC/rclone-mimus"; C="$HOME/Library/Application Support/MIMUS/cache"
@@ -193,10 +207,23 @@ timeout 60 "$MAC/MIMUS"
 ok "controllo manuale: già aggiornata" "grep -q 'MIMUS è aggiornato' $T/ui.log"
 ok "aggiornamenti automatici disattivati" "[ ! -f '$U' ] && [ ! -f $HOME/.fake-launchd/upd ] && grep -q '\"no_auto_update\": true' '$HOME/Library/Application Support/MIMUS/settings.json'"
 
+echo "== icona nella barra dei menu: tolta e rimessa"
+SJ="$HOME/Library/Application Support/MIMUS/settings.json"
+printf 'Impostazioni\n~Icona nella barra\n\n\n' > $T/choices
+timeout 60 "$MAC/MIMUS"
+ok "icona tolta" "[ ! -f '$M' ] && [ ! -f $HOME/.fake-launchd/menu ] && grep -q '\"no_menu_icon\": true' '$SJ'"
+printf '\n' > $T/choices
+timeout 60 "$MAC/MIMUS"
+ok "resta tolta alla riapertura" "[ ! -f '$M' ]"
+printf 'Impostazioni\n~Icona nella barra\n\n\n' > $T/choices
+timeout 60 "$MAC/MIMUS"
+ok "icona rimessa" "[ -f '$M' ] && [ -f $HOME/.fake-launchd/menu ] && grep -q '\"no_menu_icon\": false' '$SJ'"
+
 echo "== disinstallazione"
 printf 'Disinstalla\n' > $T/choices
 timeout 60 "$MAC/MIMUS"
 ok "servizio rimosso" "[ ! -f '$P' ]"
+ok "icona nella barra dei menu tolta" "[ ! -f '$M' ] && [ ! -f $HOME/.fake-launchd/menu ]"
 ok "collegamento fermato" "! mount | grep -q ' on $HOME/Server '"
 ok "file spostati cancellati" "[ ! -d '$HOME/Dati/MIMUS cache' ]"
 ok "cache e impostazioni cancellate" "[ ! -d '$HOME/Library/Application Support/MIMUS' ]"

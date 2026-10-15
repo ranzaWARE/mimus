@@ -267,6 +267,8 @@ func (f *Fs) replayer(ctx context.Context) {
 func (f *Fs) replay(ctx context.Context) {
 	f.replayMu.Lock()
 	defer f.replayMu.Unlock()
+	f.replaying.Store(true)
+	defer f.replaying.Store(false)
 	n := 0
 	retries := 0
 	for ctx.Err() == nil && f.isOnline() {

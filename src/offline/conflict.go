@@ -130,11 +130,13 @@ func (f *Fs) diskMonitor(ctx context.Context) {
 	defer tick.Stop()
 	below := 0
 	var lastWarn time.Time
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-tick.C:
+	for first := true; ; first = false {
+		if !first {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+			}
 		}
 		du, err := diskusage.New(config.GetCacheDir())
 		if err != nil {
@@ -142,8 +144,10 @@ func (f *Fs) diskMonitor(ctx context.Context) {
 		}
 		if du.Available >= uint64(f.opt.MinFree) {
 			below = 0
+			f.diskLow.Store(false)
 			continue
 		}
+		f.diskLow.Store(true)
 		below++
 		if below < 2 || time.Since(lastWarn) < 2*time.Hour {
 			continue

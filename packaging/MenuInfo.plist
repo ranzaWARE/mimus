@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- icona di MIMUS nella barra dei menu (MIMUS.app/Contents/Library/LoginItems) -->
+<plist version="1.0">
+<dict>
+    <key>CFBundleName</key>
+    <string>MIMUS Menu</string>
+    <key>CFBundleDisplayName</key>
+    <string>MIMUS</string>
+    <key>CFBundleIdentifier</key>
+    <string>app.mimus.menu</string>
+    <key>CFBundleExecutable</key>
+    <string>MIMUSMenu</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>__VERSION__</string>
+    <key>CFBundleVersion</key>
+    <string>__VERSION__</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>it</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>11.0</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <!-- solo l'icona nella barra: niente Dock, niente menu dell'app -->
+    <key>LSUIElement</key>
+    <true/>
+    <!-- parla solo con il servizio di MIMUS sul Mac stesso (127.0.0.1) -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
+    <key>NSHumanReadableCopyright</key>
+    <string>MIMUS</string>
+</dict>
+</plist>

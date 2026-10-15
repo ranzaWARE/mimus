@@ -47,6 +47,9 @@ rifiuta se ci sono modifiche non ancora caricate sul server remoto.
 - **Spazio disco**: lascia sempre libera la soglia scelta e avvisa se non ci riesce.
 - **Password cambiata**: smette di riprovare (l'account non si blocca) e chiede
   la nuova password.
+- **Icona nella barra dei menu**: il Gallimimus dorme (Z Z Z) quando è tutto
+  sincronizzato o sei offline, corre mentre sincronizza, mostra «!» se c'è un
+  problema. Stesso colore delle icone di sistema; si può togliere dalle Impostazioni.
 
 **Limiti:** offline vedi la cartella remota com'era all'ultima lettura; i file mai aperti
 non si aprono offline; se il Mac si rompe mentre è offline, le modifiche non
@@ -58,7 +61,10 @@ ancora caricate si perdono.
 MIMUS.app/Contents/MacOS/
   ├── MIMUS        l'app: finestre di configurazione e menu (src/app)
   └── rclone-mimus    rclone 1.72 + modulo "offline" + patch cache
+MIMUS.app/Contents/Library/LoginItems/MIMUS Menu.app   icona nella barra dei menu (src/menubar, Swift)
 ~/Library/LaunchAgents/app.mimus.agent.plist   avvio automatico (scritto dall'app)
+~/Library/LaunchAgents/app.mimus.menu.plist    icona nella barra dei menu
+~/Library/LaunchAgents/app.mimus.update.plist  controllo aggiornamenti giornaliero
 ~/Library/Application Support/MIMUS/       impostazioni, cache, coda offline
 ~/Library/Logs/MIMUS.log                           log (5 file da 10 MB a rotazione)
 ```
@@ -73,13 +79,14 @@ Diagnostica da Terminale: `bash scripts/status.sh`.
 | `src/app/` | l'app (Go, nessuna dipendenza esterna) |
 | `src/offline/` | modulo "offline" per rclone, con unit test |
 | `src/patches/vfscache.patch` | patch alla cache VFS di rclone |
-| `packaging/` | Info.plist, icona, guida (`make-guide.py` genera `Guida.html`) |
+| `src/menubar/` | icona nella barra dei menu (Swift/AppKit, solo macOS); legge lo stato da rc `mimus/status` |
+| `packaging/` | Info.plist, icona, guida (`make-guide.py` genera `Guida.html`), icone della barra (`make-menu-icons.py`) |
 | `scripts/build-rclone.sh` | scarica rclone, applica patch e modulo, lancia i test, compila |
-| `scripts/build-mac-app.sh` | app universale (Apple Silicon + Intel), firma ad-hoc, DMG |
+| `scripts/build-mac-app.sh` | app universale (Apple Silicon + Intel), firma ad-hoc, DMG; l'icona della barra si compila solo su macOS |
 | `tests/e2e-linux.sh` | test end-to-end del modulo con Samba e FUSE |
 | `tests/app-smoke-linux.sh` | test dell'app: configurazione, aggiornamento, disinstallazione |
 | `tests/update-macos.sh` | prova dell'aggiornamento automatico da un finto GitHub (macOS, nella CI) |
-| `.github/workflows/build.yml` | a ogni tag `v*` compila, testa e produce il DMG |
+| `.github/workflows/build.yml` | a ogni push compila, testa e produce il DMG; pubblica le versioni nuove |
 
 **Pubblicare una nuova versione:** aggiorna `VERSION` e `CHANGELOG.md`
 (sezione `## <versione> — data`), fai commit e push su `main`. La compilazione

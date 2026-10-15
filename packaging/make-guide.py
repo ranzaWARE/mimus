@@ -10,6 +10,19 @@ ICON = "data:image/png;base64," + base64.b64encode(open(os.path.join(HERE, "AppI
 
 E = html.escape
 
+# icone della barra dei menu (packaging/menubar, @2x: 48x36)
+def _mb(name):
+    return "data:image/png;base64," + base64.b64encode(open(os.path.join(HERE, "menubar", name + "@2x.png"), "rb").read()).decode()
+MB = {n: _mb(n) for n in ["run-0", "run-1", "run-2", "run-3", "sleep-0", "sleep-1", "sleep-2", "alert"]}
+
+def mb_icon(frames, period, label):
+    """icona come nella barra: colore del testo (maschera), animata con i fotogrammi"""
+    n = len(frames)
+    cls = "mb a" if n > 1 else "mb"
+    items = "".join(f'<i style="--m:url({MB[f]});animation-duration:{period}s;animation-delay:-{(n - i) * period / n:.3f}s"></i>'
+                    for i, f in enumerate(frames))
+    return f'<span class="{cls}" role="img" aria-label="{E(label)}">{items}</span>'
+
 # ---------- illustrazioni (SVG disegnati, stile macOS) ----------
 
 def text_lines(x, y, lines, size=13, weight=400, fill="var(--ink)", lh=19):
@@ -109,6 +122,36 @@ def finder_window():
             '<text x="340" y="196" font-size="12.5" text-anchor="middle" fill="var(--muted)">La cartella «Tecnico» nella tua cartella Inizio</text>')
     return window(560, 240, "Inizio", body)
 
+def menubar_menu():
+    w, h = 560, 212
+    ix, iy = 290, 5
+    body = (f'<defs><mask id="mbm" style="mask-type:alpha" maskContentUnits="userSpaceOnUse">'
+            f'<image href="{MB["sleep-0"]}" x="{ix}" y="{iy}" width="24" height="18"/></mask></defs>'
+            f'<rect x="1" y="1" width="{w-2}" height="28" rx="0" fill="var(--win)" stroke="var(--line)"/>'
+            f'<rect x="{ix-6}" y="3" width="36" height="22" rx="5" fill="var(--ink)" opacity=".12"/>'
+            f'<rect x="{ix}" y="{iy}" width="24" height="18" fill="var(--ink)" mask="url(#mbm)"/>'
+            # altre icone di sistema (generiche) e orologio
+            '<path d="M334 19 q9 -10 18 0 M337 16 q6 -6 12 0" fill="none" stroke="var(--ink)" stroke-width="2" stroke-linecap="round"/><circle cx="343" cy="20" r="1.8" fill="var(--ink)"/>'
+            '<rect x="366" y="9" width="22" height="11" rx="3" fill="none" stroke="var(--ink)" stroke-width="1.5"/><rect x="368.5" y="11.5" width="14" height="6" rx="1" fill="var(--ink)"/><rect x="389" y="12" width="2" height="5" rx="1" fill="var(--ink)"/>'
+            '<text x="545" y="19" font-size="12.5" text-anchor="end" fill="var(--ink)">mer 15 ott 10:42</text>'
+            '<text x="16" y="19" font-size="12.5" font-weight="700" fill="var(--ink)">Finder</text>'
+            '<text x="76" y="19" font-size="12.5" fill="var(--ink)">Archivio   Composizione   Vista   Vai</text>')
+    items = [("MIMUS – tutto sincronizzato", "muted"), None, ("Apri cartella", ""), ("Aggiorna cartelle", ""), None,
+             ("Apri MIMUS…", ""), ("Guida", ""), None, ("Nascondi l’icona (torna riaprendo MIMUS)", "")]
+    mx, my, mw = ix - 6, 32, 266
+    mh = 10 + sum(9 if it is None else 22 for it in items)
+    body += f'<rect x="{mx}" y="{my}" width="{mw}" height="{mh}" rx="9" fill="var(--paper)" stroke="var(--line)"/>'
+    y = my + 6
+    for it in items:
+        if it is None:
+            body += f'<line x1="{mx+10}" y1="{y+4.5}" x2="{mx+mw-10}" y2="{y+4.5}" stroke="var(--line)"/>'
+            y += 9
+            continue
+        label, kind = it
+        body += f'<text x="{mx+14}" y="{y+15.5}" font-size="12.5" fill="{"var(--muted)" if kind else "var(--ink)"}">{E(label)}</text>'
+        y += 22
+    return f'<svg viewBox="0 0 {w} {h}" role="img" aria-label="Icona di MIMUS nella barra dei menu" class="shot">{body}</svg>'
+
 # ---------- testo della guida ----------
 
 FIG = {
@@ -122,6 +165,7 @@ FIG = {
     "space": dialog(["Spazio da lasciare sempre libero sul disco del Mac (GB):"], ["Annulla", "OK"], field="10", w=500),
     "done": dialog(["Fatto: la cartella è collegata e si ricollegherà", "da sola a ogni accensione."], ["OK", "Apri cartella"]),
     "finder": finder_window(),
+    "menubar": menubar_menu(),
     "menu": choose_list(["Stato: attivo – cartella collegata", "2 modifiche fatte offline in attesa"],
                         ["Apri cartella", "Aggiorna cartelle", "Stato dettagliato", "Riavvia collegamento",
                          "Ferma collegamento", "Ultimi errori", "Apri log", "Log dettagliato (diagnosi) on/off",
@@ -130,7 +174,8 @@ FIG = {
                             ["Server remoto: 192.168.1.10", "Cartella remota: Tecnico", "Utente: m.rossi (dominio WORKGROUP)",
                              "Password: ••••••", "Cartella nel Finder: ~/Tecnico", "File tenuti sul Mac in: ~/Library/…/MIMUS/cache",
                              "Togli dal Mac i file non usati da: 30 giorni", "Spazio minimo libero sul disco: 10 GB",
-                             "Novità dei colleghi visibili entro: 5 minuti", "Aggiornamenti automatici di MIMUS: sì"], sel=6, w=500, ok_label="Modifica", cancel_label="Fine"),
+                             "Novità dei colleghi visibili entro: 5 minuti", "Aggiornamenti automatici di MIMUS: sì",
+                             "Icona nella barra dei menu: sì"], sel=6, w=500, ok_label="Modifica", cancel_label="Fine"),
     "conflict": dialog(["«Commesse/C123/Offerta.docx» è stato modificato in remoto",
                         "da qualcun altro mentre lo modificavi anche tu.", "",
                         "Versione remota: 13/10/2026 15:42, 48 KB", "",
@@ -216,7 +261,15 @@ pre {{ background: var(--soft); border-radius: 10px; padding: 12px 14px; overflo
 details {{ border-bottom: 1px solid var(--line); padding: 10px 0; }}
 summary {{ cursor: pointer; font-weight: 600; }}
 details p {{ margin: 8px 0 4px; }}
+a {{ color: var(--accent); }}
 footer {{ color: var(--muted); font-size: 13px; text-align: center; padding: 0 0 40px; }}
+.mb {{ display: inline-block; position: relative; width: 48px; height: 36px; vertical-align: middle; }}
+.mb i {{ position: absolute; inset: 0; background: var(--ink);
+  -webkit-mask: var(--m) center / contain no-repeat; mask: var(--m) center / contain no-repeat; }}
+.mb.a i {{ opacity: 0; animation-name: mbf; animation-timing-function: steps(1, end); animation-iteration-count: infinite; }}
+@keyframes mbf {{ 0% {{ opacity: 1; }} 25% {{ opacity: 0; }} 100% {{ opacity: 0; }} }}
+@media (prefers-reduced-motion: reduce) {{ .mb.a i {{ animation: none; }} .mb.a i:first-child {{ opacity: 1; }} }}
+td.icon {{ width: 64px; text-align: center; vertical-align: middle; }}
 @media (max-width: 600px) {{
   .hero {{ flex-direction: column; align-items: flex-start; }} h1 {{ font-size: 28px; }}
   section {{ padding: 20px 16px; }} ol.steps > li {{ padding-left: 40px; }}
@@ -236,7 +289,7 @@ footer {{ color: var(--muted); font-size: 13px; text-align: center; padding: 0 0
     </div>
   </div>
   <nav>
-    <a href="#installa">Installazione</a><a href="#primo">Primo avvio</a><a href="#uso">Uso quotidiano</a>
+    <a href="#installa">Installazione</a><a href="#primo">Primo avvio</a><a href="#uso">Uso quotidiano</a><a href="#barra">Icona in alto</a>
     <a href="#offline">Lavorare offline</a><a href="#popup">I messaggi</a><a href="#menu">Il menu</a><a href="#impostazioni">Impostazioni</a>
     <a href="#aggiorna">Aggiornare e disinstallare</a><a href="#problemi">Problemi</a><a href="#it">Per l’IT</a>
   </nav>
@@ -290,6 +343,20 @@ footer {{ color: var(--muted); font-size: 13px; text-align: center; padding: 0 0
   </ul>
 </section>
 
+<section id="barra">
+  <h2>L’icona nella barra dei menu</h2>
+  <p>In alto a destra, vicino all’orologio, c’è il Gallimimus di MIMUS. Ha lo stesso colore delle altre icone di sistema e ti dice a colpo d’occhio cosa sta succedendo:</p>
+  <table>
+    <tr><th class="icon">Icona</th><th>Cosa vuol dire</th></tr>
+    <tr><td class="icon">{mb_icon(["sleep-0", "sleep-1", "sleep-2", "sleep-2"], 3.2, "dorme")}</td><td><strong>Dorme (Z Z Z):</strong> tutto sincronizzato, non c’è niente da fare. Dorme anche quando sei <strong>offline</strong>: lavori sui file già sul Mac e le modifiche partono da sole al ritorno in rete.</td></tr>
+    <tr><td class="icon">{mb_icon(["run-0", "run-1", "run-2", "run-3"], 0.52, "corre")}</td><td><strong>Corre:</strong> sta sincronizzando: carica o scarica file, applica le modifiche fatte offline o aggiorna l’elenco delle cartelle. Puoi continuare a lavorare.</td></tr>
+    <tr><td class="icon">{mb_icon(["alert"], 1, "punto esclamativo")}</td><td><strong>Punto esclamativo:</strong> c’è un problema da guardare: password non accettata, modifiche rifiutate dal server remoto, disco quasi pieno, collegamento fermo. Clicca l’icona per leggere cosa succede.</td></tr>
+  </table>
+  {fig("menubar", "Cliccando l’icona: lo stato in parole e i comandi più usati.")}
+  <p><em>Apri MIMUS…</em> porta al <a href="#menu">menu completo</a> dell’app. <em>Nascondi l’icona</em> la toglie finché non riapri MIMUS (o fino al prossimo accesso); per toglierla sempre: <a href="#impostazioni">Impostazioni</a> → <em>Icona nella barra dei menu: no</em>.</p>
+  <div class="note">Non la vedi? Sui Mac con la fotocamera nello schermo le icone in eccesso restano nascoste dietro la tacca: tieni premuto <strong>⌘</strong> e trascina via qualche altra icona per fare spazio (con ⌘ puoi anche spostare quella di MIMUS). Sulle versioni recenti di macOS controlla anche Impostazioni di Sistema → <strong>Barra dei menu</strong>, che MIMUS sia consentita.</div>
+</section>
+
 <section id="offline">
   <h2>Lavorare offline</h2>
   <p>Fuori ufficio, senza rete o senza VPN, la cartella continua a funzionare con quello che hai già sul Mac.</p>
@@ -332,7 +399,7 @@ footer {{ color: var(--muted); font-size: 13px; text-align: center; padding: 0 0
 
 <section id="menu">
   <h2>Il menu dell’app</h2>
-  <p>Riaprendo MIMUS da Applicazioni compare lo stato e l’elenco delle azioni. In alto vedi se ci sono file ancora da caricare o modifiche offline in attesa.</p>
+  <p>Riaprendo MIMUS da Applicazioni (o dall’icona in alto → <em>Apri MIMUS…</em>) compare lo stato e l’elenco delle azioni. In alto vedi se ci sono file ancora da caricare o modifiche offline in attesa.</p>
   {fig("menu", "Il menu: scegli un’azione e premi Esegui.")}
   <table>
     <tr><th>Azione</th><th>A cosa serve</th></tr>
@@ -362,6 +429,7 @@ footer {{ color: var(--muted); font-size: 13px; text-align: center; padding: 0 0
     <tr><td>Togli dal Mac i file non usati da</td><td>dopo quanti giorni un file non aperto viene tolto dal Mac (sempre e solo se è al sicuro sul server remoto)</td></tr>
     <tr><td>Spazio minimo libero</td><td>quanti GB lasciare sempre liberi sul disco</td></tr>
     <tr><td>Aggiornamenti automatici di MIMUS</td><td>sì/no: controllo giornaliero delle nuove versioni</td></tr>
+    <tr><td>Icona nella barra dei menu</td><td>sì/no: il dinosauro in alto a destra (vedi <a href="#barra">sopra</a>)</td></tr>
     <tr><td>Novità dei colleghi visibili entro</td><td>ogni quanti minuti controllare le modifiche fatte da altri (valori bassi = più richieste al server remoto)</td></tr>
   </table>
   <div class="note">Server, cartella condivisa e posizione dei file si possono cambiare solo quando non ci sono modifiche in attesa di essere caricate: altrimenti l’app te lo dice e salva solo le altre impostazioni.
@@ -404,6 +472,7 @@ footer {{ color: var(--muted); font-size: 13px; text-align: center; padding: 0 0
     <tr><td>App (contiene anche rclone-mimus)</td><td><code>/Applications/MIMUS.app</code></td></tr>
     <tr><td>Avvio automatico</td><td><code>~/Library/LaunchAgents/app.mimus.agent.plist</code> (scritto dall’app)</td></tr>
     <tr><td>Controllo aggiornamenti</td><td><code>~/Library/LaunchAgents/app.mimus.update.plist</code>, una volta al giorno; legge le Release di <code>github.com/ranzaWARE/mimus</code></td></tr>
+    <tr><td>Icona nella barra dei menu</td><td><code>MIMUS.app/Contents/Library/LoginItems/MIMUS Menu.app</code>, avviata da <code>~/Library/LaunchAgents/app.mimus.menu.plist</code>; legge lo stato dal servizio su <code>127.0.0.1:5572</code> (rc <code>mimus/status</code>)</td></tr>
     <tr><td>Impostazioni (<code>settings.json</code>)</td><td><code>~/Library/Application Support/MIMUS/</code></td></tr>
     <tr><td>Cache e coda offline</td><td><code>~/Library/Application Support/MIMUS/cache</code> o la posizione scelta nelle Impostazioni</td></tr>
     <tr><td>Modifiche offline rifiutate dal server remoto</td><td><code>…/cache/offline/mimus/*/journal-failed.json</code></td></tr>
