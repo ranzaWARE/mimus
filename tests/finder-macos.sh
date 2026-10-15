@@ -67,26 +67,21 @@ echo "::notice title=estensione del Finder::processo: ${PROC:-nessuno}%0Aplugink
 case "$LOGS" in *"locale.txt=local"*) echo "  OK   pallini messi dal Finder";;
     *) echo "::warning title=finder::pallini non visti nei messaggi dell'estensione";; esac
 
-# «Riavvia collegamento»: la cartella viene smontata e rimontata; i pallini
-# devono tornare (l'estensione se ne accorge e li rimanda)
-P1="$(pgrep -f MIMUSFinder | tr '\n' ' ')"
+# «Riavvia collegamento» con la cartella aperta nel Finder: il servizio
+# viene fermato (il Finder può impedire lo scollegamento) e riparte da solo,
+# senza aiuti: la cartella deve tornare e i pallini anche
 kill $PID 2>/dev/null; wait $PID 2>/dev/null
-mount | grep -q " on $M " && { umount -f "$M" 2>/dev/null || diskutil unmount force "$M" >/dev/null; }
-sleep 3
 "$R" nfsmount mimus: "$M" --cache-dir "$T/cache" --vfs-cache-mode full \
     --rc --rc-addr 127.0.0.1:5572 --log-file "$T/mount.log" &
 PID=$!
-for _ in $(seq 60); do mount | grep -q " on $M " && break; sleep 0.5; done
+back=0
+for _ in $(seq 40); do curl -s -m 2 -X POST http://127.0.0.1:5572/core/pid | grep -q pid && mount | grep -q " on $M " && { back=1; break; }; sleep 1; done
+if [ $back = 1 ]; then echo "  OK   cartella di nuovo collegata"
+else echo "::error title=finder::la cartella non torna dopo il riavvio: $(tail -n 8 "$T/mount.log" | enc)"; FAILS=$((FAILS + 1)); fi
 open "$M"; sleep 15
 FL="$HOME/Library/Containers/app.mimus.finder/Data/tmp/mimus-finder.log"
-P2="$(pgrep -f MIMUSFinder | tr '\n' ' ')"
-echo "::notice title=finder 1 dopo il riavvio (nessun intervento)::prima: $P1 dopo: $P2%0A$(tail -n 6 "$FL" 2>&1 | enc)%0Aservizio: $(pgrep -fl 'rclone-mimus nfsmount' | enc)%0Amount: $(mount | grep -i collegata | enc)%0Alog: $(tail -n 8 "$T/mount.log" | enc)%0Arc: $(curl -s -m 3 -X POST http://127.0.0.1:5572/core/pid | enc)"
-# rimedio A: l'estensione viene chiusa (il Finder la riapre?)
-pkill -f MIMUSFinder; sleep 2; open "$M"; sleep 12
-P3="$(pgrep -f MIMUSFinder | tr '\n' ' ')"
-echo "::notice title=finder 2 dopo pkill::processo: $P3%0A$(tail -n 6 "$FL" 2>&1 | enc)"
-# rimedio B: spenta e riaccesa con pluginkit
-pluginkit -e ignore -i app.mimus.finder; sleep 2; pluginkit -e use -i app.mimus.finder; sleep 2; open "$M"; sleep 12
-P4="$(pgrep -f MIMUSFinder | tr '\n' ' ')"
-echo "::notice title=finder 3 dopo pluginkit::processo: $P4%0A$(tail -n 6 "$FL" 2>&1 | enc)"
+AFTER="$(sed -n '/collegamento ripartito/,$p' "$FL" 2>/dev/null | tail -n 8)"
+echo "::notice title=pallini dopo il riavvio del collegamento::$(tail -n 8 "$FL" 2>&1 | enc)%0Aservizio: $(grep -E 'scollego|riprovo|NFS Server' "$T/mount.log" | tail -n 4 | enc)"
+case "$AFTER" in *"collegamento ripartito"*"locale.txt=local"*) echo "  OK   pallini rimessi dopo il riavvio";;
+    *) echo "::warning title=finder::pallini non rimessi dopo il riavvio del collegamento";; esac
 exit $FAILS

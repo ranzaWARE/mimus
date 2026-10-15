@@ -1,3 +1,134 @@
+diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
+--- a/cmd/nfsmount/nfsmount.go
++++ b/cmd/nfsmount/nfsmount.go
+@@ -11,7 +11,9 @@
+ 	"fmt"
+ 	"net"
+ 	"os/exec"
++	"path/filepath"
+ 	"runtime"
++	"time"
+ 
+ 	"github.com/rclone/rclone/cmd/mountlib"
+ 	"github.com/rclone/rclone/cmd/serve/nfs"
+@@ -72,7 +74,25 @@
+ 	cmd = append(cmd, "localhost:"+opt.VolumeName, mountpoint)
+ 	fs.Debugf(nil, "Running mount command: %q", cmd)
+ 
+-	out, err := exec.Command(cmd[0], cmd[1:]...).CombinedOutput()
++	// MIMUS: a previous run that ended badly (crash, kill, unmount refused
++	// while the Finder used the folder) can leave the folder mounted on a
++	// dead server: every new mount would fail with "busy" (16) for ever
++	if mimusIsMounted(mountpoint) {
++		fs.Logf(nil, "la cartella è ancora collegata a un servizio fermo: la scollego")
++		if uerr := mimusUnmount(mountpoint); uerr != nil {
++			fs.Errorf(nil, "scollegamento non riuscito: %v", uerr)
++		}
++	}
++	var out []byte
++	for try := 1; ; try++ {
++		out, err = exec.Command(cmd[0], cmd[1:]...).CombinedOutput()
++		if err == nil || try == 5 {
++			break
++		}
++		fs.Logf(nil, "collegamento non riuscito (%s): riprovo", bytes.TrimSpace(out))
++		_ = mimusUnmount(mountpoint)
++		time.Sleep(2 * time.Second)
++	}
+ 	if err != nil {
+ 		out = bytes.TrimSpace(out)
+ 		err = fmt.Errorf("%s: failed to mount NFS volume: %v", out, err)
+@@ -83,23 +103,11 @@
+ 		if s.UnmountedExternally {
+ 			return nil
+ 		}
+-		var umountErr error
+-		var out []byte
+-		if runtime.GOOS == "darwin" {
+-			out, umountErr = exec.Command("diskutil", "umount", "force", mountpoint).CombinedOutput()
+-		} else {
+-			cmd := []string{}
+-			if sudo {
+-				cmd = append(cmd, "sudo")
+-			}
+-			cmd = append(cmd, "umount", "-f", mountpoint)
+-			out, umountErr = exec.Command(cmd[0], cmd[1:]...).CombinedOutput()
+-		}
++		umountErr := mimusUnmount(mountpoint) // MIMUS: with retries
+ 		shutdownErr := s.Shutdown()
+ 		VFS.Shutdown()
+ 		if umountErr != nil {
+-			out = bytes.TrimSpace(out)
+-			return fmt.Errorf("%s: failed to umount the NFS volume %e", out, umountErr)
++			return fmt.Errorf("failed to umount the NFS volume: %w", umountErr)
+ 		} else if shutdownErr != nil {
+ 			return fmt.Errorf("failed to shutdown NFS server: %e", shutdownErr)
+ 		}
+@@ -114,3 +122,64 @@
+ 
+ 	return
+ }
++
++// mimusMountNames: the mountpoint as given and as the mount table shows it
++// (on macOS /var is /private/var). Only the parent is resolved: the folder
++// itself may be a dead mount, where any access can hang.
++func mimusMountNames(mountpoint string) []string {
++	names := []string{mountpoint}
++	if parent, err := filepath.EvalSymlinks(filepath.Dir(mountpoint)); err == nil {
++		if real := filepath.Join(parent, filepath.Base(mountpoint)); real != mountpoint {
++			names = append(names, real)
++		}
++	}
++	return names
++}
++
++// mimusIsMounted reads the mount table (never touches the folder)
++func mimusIsMounted(mountpoint string) bool {
++	out, err := exec.Command("mount").Output()
++	if err != nil {
++		return false
++	}
++	for _, name := range mimusMountNames(mountpoint) {
++		if bytes.Contains(out, []byte(" on "+name+" ")) {
++			return true
++		}
++	}
++	return false
++}
++
++// mimusUnmount unmounts, insisting: diskutil sometimes refuses while the
++// Finder uses the folder, umount -f does not
++func mimusUnmount(mountpoint string) error {
++	var last error
++	for try := 0; try < 4; try++ {
++		var cmds [][]string
++		if runtime.GOOS == "darwin" {
++			cmds = append(cmds, []string{"diskutil", "unmount", "force", mountpoint})
++		}
++		umount := []string{"umount", "-f", mountpoint}
++		if sudo {
++			umount = append([]string{"sudo"}, umount...)
++		}
++		cmds = append(cmds, umount)
++		for _, c := range cmds {
++			out, err := exec.Command(c[0], c[1:]...).CombinedOutput()
++			if err == nil && !mimusIsMounted(mountpoint) {
++				return nil
++			}
++			if err != nil {
++				last = fmt.Errorf("%s: %s: %w", c[0], bytes.TrimSpace(out), err)
++			}
++		}
++		if !mimusIsMounted(mountpoint) {
++			return nil
++		}
++		time.Sleep(time.Second)
++	}
++	if last == nil {
++		last = fmt.Errorf("%s still mounted", mountpoint)
++	}
++	return last
++}
 diff --git a/cmd/serve/nfs/filesystem.go b/cmd/serve/nfs/filesystem.go
 --- a/cmd/serve/nfs/filesystem.go
 +++ b/cmd/serve/nfs/filesystem.go

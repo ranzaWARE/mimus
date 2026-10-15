@@ -29,8 +29,8 @@ diag(){ echo "::warning title=app-macos $1::$( { echo "mount:"; mount | grep -i 
 
 # --- Samba ---
 BP="$(brew --prefix samba 2>/dev/null)/"
-SMBD="$(find "$BP" -name smbd -type f -perm -u+x 2>/dev/null | head -1)"
-SMBPASSWD="$(find "$BP" -name smbpasswd -type f -perm -u+x 2>/dev/null | head -1)"
+SMBD="$(find "$BP" -name smbd \( -type f -o -type l \) 2>/dev/null | head -1)"
+SMBPASSWD="$(find "$BP" -name smbpasswd \( -type f -o -type l \) 2>/dev/null | head -1)"
 echo "Samba: $SMBD $SMBPASSWD"
 [ -x "$SMBD" ] || { echo "::error::manca smbd (brew install samba): $(ls -R "$BP" 2>&1 | head -40 | enc)"; exit 1; }
 cat > "$T/smb.conf" <<EOF
