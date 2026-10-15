@@ -1,0 +1,35 @@
+# Misura (su un Mac vero) in quanto tempo le modifiche fatte da altri sul
+# server remoto compaiono nella cartella collegata. Non blocca nulla: i
+# risultati sono nelle annotazioni.
+name: refresh
+on:
+  workflow_dispatch:
+    inputs:
+      configs:
+        description: 'coppie nome "argomenti rclone" (vuoto = attuale e nuova)'
+        required: false
+        default: ''
+  push:
+    branches: [main]
+    paths:
+      - tests/refresh-macos.sh
+      - .github/workflows/refresh.yml
+      - src/patches/**
+permissions:
+  contents: read
+jobs:
+  refresh:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: rclone-mimus
+        run: bash scripts/build-rclone.sh
+      - name: Tempi di aggiornamento
+        env:
+          CONFIGS: ${{ github.event.inputs.configs }}
+        run: |
+          if [ -n "$CONFIGS" ]; then eval "bash tests/refresh-macos.sh $CONFIGS"; else bash tests/refresh-macos.sh; fi

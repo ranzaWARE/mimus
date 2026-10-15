@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -304,4 +305,79 @@ func TestRcStatus(t *testing.T) {
 	f.stateMu.Lock()
 	f.authFailed = false
 	f.stateMu.Unlock()
+}
+
+func TestWatchNotifiesRemoteChanges(t *testing.T) {
+	ctx := context.Background()
+	f, base, setOnline := newTestFs(t)
+	must(t, os.MkdirAll(filepath.Join(base, "a"), 0o755))
+	for _, d := range []string{"", "a"} {
+		if _, err := f.List(ctx, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got []string
+	notify := func(p string, _ fs.EntryType) { got = append(got, p) }
+	if n := f.pollWatched(ctx, notify, 1); n != 0 {
+		t.Fatalf("nothing changed, notified %v", got)
+	}
+	// a colleague adds a file in "a"
+	must(t, os.WriteFile(filepath.Join(base, "a/new.txt"), []byte("x"), 0o644))
+	if n := f.pollWatched(ctx, notify, 1); n != 1 || strings.Join(got, ",") != "a" {
+		t.Fatalf("new file: notified %v", got)
+	}
+	if saved, _ := f.store.load("a"); len(saved) != 1 || saved[0].Name != "new.txt" {
+		t.Fatalf("listing not saved for offline use: %+v", saved)
+	}
+	got = nil
+	if n := f.pollWatched(ctx, notify, 1); n != 0 {
+		t.Fatalf("no new change, notified %v", got)
+	}
+	// folder removed on the remote: forgotten, parent changed too
+	must(t, os.RemoveAll(filepath.Join(base, "a")))
+	got = nil
+	f.pollWatched(ctx, notify, 1)
+	sort.Strings(got)
+	if j := strings.Join(got, "|"); j != "|a" {
+		t.Fatalf("removed folder: notified %q, want root and a", j)
+	}
+	if f.store.has("a") {
+		t.Fatal("removed folder still saved")
+	}
+	// offline: no requests
+	got = nil
+	setOnline(false)
+	must(t, os.MkdirAll(filepath.Join(base, "b"), 0o755))
+	if n := f.pollWatched(ctx, notify, 1); n != 0 {
+		t.Fatalf("offline: notified %v", got)
+	}
+	// folders not opened for a while are no longer re-read
+	if l := f.watchList(time.Now().Add(time.Hour), 10); len(l) != 0 {
+		t.Fatalf("old folders still watched: %v", l)
+	}
+}
+
+func TestChangeNotifyTicks(t *testing.T) {
+	ctx := context.Background()
+	f, base, _ := newTestFs(t)
+	if f.Features().ChangeNotify == nil {
+		t.Fatal("ChangeNotify not offered to the VFS")
+	}
+	if _, err := f.List(ctx, ""); err != nil {
+		t.Fatal(err)
+	}
+	seen := make(chan string, 10)
+	intervals := make(chan time.Duration)
+	f.Features().ChangeNotify(ctx, func(p string, _ fs.EntryType) { seen <- p }, intervals)
+	intervals <- 50 * time.Millisecond
+	must(t, os.MkdirAll(filepath.Join(base, "nuova"), 0o755))
+	select {
+	case p := <-seen:
+		if p != "" {
+			t.Fatalf("notified %q, want root", p)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("no notification")
+	}
+	close(intervals)
 }

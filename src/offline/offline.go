@@ -78,6 +78,14 @@ func init() {
 			Advanced: true,
 			Help:     "Pause after each folder read during a complete read.",
 		}, {
+			Name:    "watch_dirs",
+			Default: 32,
+			Help:    "Folders opened recently that are re-read in background to show at once the changes made by others\n(every --poll-interval of the mount; 0 = off).",
+		}, {
+			Name:    "watch_window",
+			Default: fs.Duration(15 * time.Minute),
+			Help:    "A folder is re-read in background for this long after it was last opened.",
+		}, {
 			Name:    "min_free",
 			Default: fs.SizeSuffix(0),
 			Help:    "Warn the user when the free space of the cache disk stays below this (0 = off).\nUse the same value as --vfs-cache-min-free-space.",
@@ -119,6 +127,8 @@ type Options struct {
 	WalkForceAge      fs.Duration   `config:"walk_force_age"`
 	WalkWorkers       int           `config:"walk_workers"`
 	WalkPace          fs.Duration   `config:"walk_pace"`
+	WatchDirs         int           `config:"watch_dirs"`
+	WatchWindow       fs.Duration   `config:"watch_window"`
 	MinFree           fs.SizeSuffix `config:"min_free"`
 	UI                string        `config:"ui"`
 	AskTimeout        fs.Duration   `config:"ask_timeout"`
@@ -152,6 +162,7 @@ type Fs struct {
 	replayMu   sync.Mutex
 	replayWake chan struct{}
 	walkWake   chan struct{}
+	watch      watchSet
 	orphans    sync.Map
 	lnOnce     sync.Once // «Rete locale» hint shown once
 	replaying  atomic.Bool
@@ -208,6 +219,8 @@ func NewFs(ctx context.Context, name, rpath string, m configmap.Mapper) (fs.Fs, 
 		CanHaveEmptyDirectories: true,
 		PartialUploads:          true,
 	}).Fill(ctx, f).Mask(ctx, baseFs).WrapsFs(f, baseFs)
+	// SMB has no change notifications: ours re-reads the folders in use
+	f.features.ChangeNotify = f.ChangeNotify
 	cache.PinUntilFinalized(baseFs, f)
 
 	if err == nil {
@@ -279,6 +292,7 @@ func (f *Fs) listOnline(ctx context.Context, dir string) (fs.DirEntries, error) 
 
 // List the directory
 func (f *Fs) List(ctx context.Context, dir string) (fs.DirEntries, error) {
+	f.watchMark(dir)
 	var err error
 	if f.isOnline() {
 		// folders with queued changes are shown as the Mac sees them
