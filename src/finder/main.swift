@@ -26,7 +26,8 @@ func dlog(_ msg: String) {
     logger.notice("\(msg, privacy: .public)")
     let url = FileManager.default.temporaryDirectory.appendingPathComponent("mimus-finder.log")
     let line = "\(Date()) \(msg)\n"
-    if let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)??.intValue, size > 200_000 {
+    if let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+       let size = attrs[.size] as? NSNumber, size.intValue > 200_000 {
         try? FileManager.default.removeItem(at: url)
     }
     if let h = try? FileHandle(forWritingTo: url) {
