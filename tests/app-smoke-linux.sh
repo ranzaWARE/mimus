@@ -94,7 +94,7 @@ cat > $T/stubs/mount <<'EOF'
 /bin/mount | sed -E 's/ type ([^ ]+) \(/ (\1, /'
 EOF
 printf '#!/bin/bash\nfusermount -uz "${@: -1}"\n' > $T/stubs/umount
-for c in defaults open diskutil; do printf '#!/bin/bash\necho "%s $*" >> %s/cmds.log\n' $c $T > $T/stubs/$c; done
+for c in defaults open diskutil xattr; do printf '#!/bin/bash\necho "%s $*" >> %s/cmds.log\n' $c $T > $T/stubs/$c; done
 chmod +x $T/stubs/*
 
 # --- risposte dell'utente ---
@@ -147,6 +147,7 @@ ok "controllo aggiornamenti giornaliero attivo" "grep -q -- '--check-update' '$U
 ok "nessuna proposta di aggiornamento (già aggiornata)" "! grep -q 'disponibile' $T/ui.log"
 M=$HOME/Library/LaunchAgents/app.mimus.menu.plist
 ok "icona nella barra dei menu attiva" "grep -q 'LoginItems/MIMUS Menu.app/Contents/MacOS/MIMUSMenu' '$M' && [ -f $HOME/.fake-launchd/menu ]"
+ok "icona senza quarantena" "grep -q 'xattr -dr com.apple.quarantine $APP/Contents/Library/LoginItems/MIMUS Menu.app\$' $T/cmds.log"
 
 echo "== riapertura con versione nuova: servizio aggiornato e riavviato"
 sed -i 's/"version": "[^"]*"/"version": "0.9"/' "$HOME/Library/Application Support/MIMUS/settings.json"

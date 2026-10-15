@@ -84,6 +84,10 @@ func setMenuIcon(p paths, on bool) {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return
 	}
+	// MIMUS is already approved by the user («Apri comunque»): the icon,
+	// started directly by launchd, must not be asked about again
+	helperApp := filepath.Dir(filepath.Dir(filepath.Dir(menuHelper(p))))
+	_, _ = run("xattr", "-dr", "com.apple.quarantine", helperApp)
 	if err := os.WriteFile(path, b.Bytes(), 0o644); err != nil {
 		return
 	}
