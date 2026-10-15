@@ -1,0 +1,74 @@
+diff --git a/vfs/dir.go b/vfs/dir.go
+index 174b7d0..a7bb870 100644
+--- a/vfs/dir.go
++++ b/vfs/dir.go
+@@ -297,6 +297,23 @@ func (d *Dir) changeNotify(relativePath string, entryType fs.EntryType) {
+ 	if entryType == fs.EntryDirectory {
+ 		d.invalidateDir(absPath)
+ 	}
++	// MIMUS: a new date tells NFS clients (the Finder) that the folder
++	// changed, so open windows refresh by themselves
++	d.touchDir(vfscommon.FindParent(absPath))
++	if entryType == fs.EntryDirectory {
++		d.touchDir(absPath)
++	}
++}
++
++// touchDir sets the modification time of a cached directory to now
++func (d *Dir) touchDir(absPath string) {
++	if dir, ok := d.vfs.root.cachedNode(absPath).(*Dir); ok {
++		dir.modTimeMu.Lock()
++		if now := time.Now(); now.After(dir.modTime) {
++			dir.modTime = now
++		}
++		dir.modTimeMu.Unlock()
++	}
+ }
+ 
+ // ForgetPath clears the cache for itself and all subdirectories if
+@@ -761,7 +778,13 @@ func (d *Dir) _readDirFromEntries(entries fs.DirEntries, dirTree dirtree.DirTree
+ 			}
+ 			dir := node.(*Dir)
+ 			dir.mu.Lock()
+-			dir.modTime = item.ModTime(context.TODO())
++			// MIMUS: never back in time, or the date set by touchDir would be
++			// lost and NFS clients would not see that the folder changed
++			dir.modTimeMu.Lock()
++			if t := item.ModTime(context.TODO()); t.After(dir.modTime) {
++				dir.modTime = t
++			}
++			dir.modTimeMu.Unlock()
+ 			dir.entry = item
+ 			if dirTree != nil {
+ 				err = dir._readDirFromDirTree(dirTree, when)
+diff --git a/vfs/dir_test.go b/vfs/dir_test.go
+index 3d7ab8c..08334c8 100644
+--- a/vfs/dir_test.go
++++ b/vfs/dir_test.go
+@@ -763,3 +763,26 @@ func TestDirMetadataExtension(t *testing.T) {
+ 		assert.Equal(t, modTime.Format(time.RFC3339Nano), metadata["mtime"])
+ 	}
+ }
++
++// MIMUS: a change notified by the backend gives the folders a new date
++// (NFS clients refresh open windows), and a re-read does not take it back
++func TestDirChangeNotifyTouches(t *testing.T) {
++	_, vfs, dir, file1 := dirCreate(t)
++	_, err := vfs.Stat(file1.Path)
++	require.NoError(t, err)
++	root, err := vfs.Root()
++	require.NoError(t, err)
++	rootBefore, dirBefore := root.ModTime(), dir.ModTime()
++	time.Sleep(10 * time.Millisecond)
++
++	root.changeNotify("dir", fs.EntryDirectory)
++	assert.True(t, root.ModTime().After(rootBefore), "root date not changed")
++	assert.True(t, dir.ModTime().After(dirBefore), "dir date not changed")
++	touched := dir.ModTime()
++
++	// re-reading the root (dir's date from the remote is older) keeps it
++	_, err = vfs.Stat("dir")
++	require.NoError(t, err)
++	assert.False(t, root.read.IsZero())
++	assert.Equal(t, touched, dir.ModTime())
++}

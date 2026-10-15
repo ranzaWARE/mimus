@@ -1,6 +1,6 @@
 #!/bin/bash
 # Compila rclone-mimus = rclone ufficiale + modulo "offline" (src/offline)
-# + patch alla cache VFS (src/patches), con i soli backend usati (smb, local).
+# + patch alla VFS (src/patches), con i soli backend usati (smb, local).
 # Serve Go 1.24+ e internet (o RCLONE_SRC = sorgente rclone già scaricato).
 #   bash scripts/build-rclone.sh            -> rclone v1.72.0 (versione testata)
 #   bash scripts/build-rclone.sh v1.7x.y    -> altra versione: poi rifare i test!
@@ -22,7 +22,7 @@ else
 fi
 cd "$WORK/rclone"
 
-git apply "$ROOT/src/patches/vfscache.patch"
+for P in "$ROOT"/src/patches/*.patch; do git apply "$P"; done
 mkdir -p backend/offline
 cp "$ROOT"/src/offline/*.go backend/offline/
 cat > backend/all/all.go <<'GO'
@@ -38,6 +38,7 @@ GO
 
 echo "Test del modulo offline e della cache..."
 go test -count=1 ./backend/offline/ ./vfs/vfscache/
+go test -count=1 -run 'TestDir' ./vfs/
 
 LDFLAGS="-s -w -X github.com/rclone/rclone/fs.Version=$RCLONE_VER-mimus-$APP_VER"
 mkdir -p "$ROOT/build"

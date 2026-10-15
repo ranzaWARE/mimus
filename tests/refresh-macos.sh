@@ -4,8 +4,8 @@
 # vero). Il "server" è una cartella locale modificata direttamente; un ciclo
 # con ls fa la parte del Finder con le cartelle aperte.
 #   bash tests/refresh-macos.sh [nome "argomenti rclone"]...
-# Senza argomenti confronta: la 1.5.0 (nessun controllo delle cartelle aperte),
-# il controllo ogni minuto (predefinito di rclone) e le impostazioni nuove.
+# Senza argomenti: le impostazioni del servizio. "Finder avvisato" = dopo
+# quanti secondi una finestra aperta riceve l'avviso di aggiornarsi.
 
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -15,6 +15,29 @@ T="$(cd "$(mktemp -d)" && pwd -P)"   # /private/var/...: come lo mostra mount
 export RCLONE_CONFIG="$T/rclone.conf"
 "$R" config create mimus offline remote="$T/src" ui=none >/dev/null
 LIMIT=${LIMIT:-330}
+KQLIMIT=${KQLIMIT:-90}
+# finestra del Finder: aspetta gli avvisi del sistema sulle cartelle (kqueue)
+cat > "$T/kq.py" <<'PY'
+import os, select, sys, time
+limit, paths = float(sys.argv[1]), sys.argv[2:]
+kq, fds = select.kqueue(), {}
+flags = select.KQ_NOTE_WRITE | select.KQ_NOTE_ATTRIB | select.KQ_NOTE_EXTEND | select.KQ_NOTE_LINK
+for p in paths:
+    fd = os.open(p, 0x8000)  # O_EVTONLY, come il Finder
+    fds[fd] = p
+    kq.control([select.kevent(fd, select.KQ_FILTER_VNODE, select.KQ_EV_ADD | select.KQ_EV_CLEAR, flags)], 0)
+print("pronto", flush=True)
+start, seen = time.time(), {}
+while len(seen) < len(paths) and time.time() - start < limit:
+    for e in kq.control(None, 8, 1.0):
+        p = fds[e.ident]
+        if p not in seen:
+            seen[p] = round(time.time() - start)
+            print(f"{p} {seen[p]}s", flush=True)
+for p in paths:
+    if p not in seen:
+        print(f"{p} mai", flush=True)
+PY
 RESULTS=""
 
 measure(){ # nome argomenti...
@@ -30,15 +53,21 @@ measure(){ # nome argomenti...
         echo "::error title=$name::cartella non collegata: $(tail -c 400 "$T/$name.log" | tr '\n' ' ')"
         kill $pid 2>/dev/null; wait $pid 2>/dev/null; return
     fi
-    # il Finder guarda le cartelle
+    # il Finder guarda le cartelle: le elenca e resta in ascolto (kqueue,
+    # come una finestra aperta)
     ls "$M" "$M/sub1" "$M/sub2" "$M/sub3" > /dev/null; cat "$M/sub2/f.txt" > /dev/null
     sleep 3
+    python3 "$T/kq.py" "$KQLIMIT" "$M" "$M/sub1" "$M/sub3" > "$T/kq.out" 2>&1 &
+    local kq=$!
+    for _ in $(seq 20); do grep -q '^pronto' "$T/kq.out" && break; sleep 0.5; done
     # un collega cambia il server remoto
     echo nuovo > "$S/sub1/nuovo.txt"
     mkdir "$S/NuovaCartella"
     echo "uno modificato" > "$S/sub2/f.txt"   # 15 byte
     rm "$S/sub3/g.txt"
     local start=$SECONDS a="" b="" c="" d="" now
+    wait $kq
+    local fk; fk="$(grep -v '^pronto' "$T/kq.out" | sed "s#$M#cima#; s#cima/##" | tr '\n' ' ')"
     while [ $((SECONDS - start)) -lt "$LIMIT" ]; do
         now=$((SECONDS - start))
         [ -z "$a" ] && ls "$M/sub1" | grep -q nuovo.txt && a=$now
@@ -48,7 +77,7 @@ measure(){ # nome argomenti...
         [ -n "$a" ] && [ -n "$b" ] && [ -n "$c" ] && [ -n "$d" ] && break
         sleep 1
     done
-    local line="file nuovo ${a:-oltre $LIMIT}s · cartella nuova in cima ${b:-oltre $LIMIT}s · file modificato ${c:-oltre $LIMIT}s · file cancellato ${d:-oltre $LIMIT}s"
+    local line="Finder avvisato: ${fk:-mai} · visibili (dall'inizio): file nuovo ${a:-oltre $LIMIT}s · cartella nuova in cima ${b:-oltre $LIMIT}s · file modificato ${c:-oltre $LIMIT}s · file cancellato ${d:-oltre $LIMIT}s"
     echo "$name: $line"
     echo "::notice title=$name ($*)::$line"
     RESULTS="$RESULTS$name: $line"$'\n'
@@ -57,9 +86,7 @@ measure(){ # nome argomenti...
 }
 
 if [ $# -eq 0 ]; then
-    set -- come-1.5.0 "--offline-watch-dirs 0" \
-        controllo-ogni-minuto "" \
-        nuova "--poll-interval 15s --option acdirmax=5 --option nonegnamecache"
+    set -- come-1.5.1 "--poll-interval 15s --option acdirmax=5 --option nonegnamecache"
 fi
 while [ $# -ge 2 ]; do
     # shellcheck disable=SC2086

@@ -1,0 +1,26 @@
+# Prova (su un Mac vero) di tag del Finder e attributi estesi nella cartella
+# collegata. Non blocca nulla: i risultati sono nelle annotazioni.
+name: xattr
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - tests/xattr-macos.sh
+      - .github/workflows/xattr.yml
+      - src/patches/**
+permissions:
+  contents: read
+jobs:
+  xattr:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: rclone-mimus
+        run: bash scripts/ci-run.sh rclone-mimus bash scripts/build-rclone.sh
+      - name: Attributi estesi
+        run: bash tests/xattr-macos.sh
