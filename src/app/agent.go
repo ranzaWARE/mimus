@@ -158,6 +158,14 @@ var plistTmpl = template.Must(template.New("plist").Parse(`<?xml version="1.0" e
         <string>acdirmax=5</string>
         <string>--option</string>
         <string>nonegnamecache</string>
+        <!-- blocchi grandi tra il Finder e il servizio: i file già sul Mac si
+             leggono a centinaia di MB/s invece di ~55 (misurato) -->
+        <string>--option</string>
+        <string>rsize=1048576</string>
+        <string>--option</string>
+        <string>wsize=1048576</string>
+        <string>--option</string>
+        <string>readahead=64</string>
         <string>--contimeout</string>
         <string>5s</string>
         <string>--log-file</string>

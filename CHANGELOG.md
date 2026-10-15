@@ -3,6 +3,15 @@
 Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
 `rclone-mimus version` (es. `v1.72.0-mimus-1.0.0`).
 
+## 1.6.1 — 2026-10-15
+
+- **File già sul Mac molto più veloci**: copiare o aprire un file col pallino
+  verde andava a circa 55 MB/s, come dal server. Il collegamento interno tra
+  Finder e MIMUS usava blocchi piccoli; ora usa blocchi da 1 MB e va a
+  170–600 MB/s (misurato su un Mac vero, file da 600 MB). Lo stesso vale per
+  le scritture.
+- Verificato che leggere un file già sul Mac non lo riscarica dal server.
+
 ## 1.6.0 — 2026-10-15
 
 - **Pallini nel Finder** sui file della cartella collegata:

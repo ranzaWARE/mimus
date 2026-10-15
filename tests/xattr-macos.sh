@@ -73,7 +73,7 @@ variant(){ # nome argomenti...
 }
 
 if [ $# -eq 0 ]; then
-    set -- servizio "--poll-interval 15s --option acdirmax=5 --option nonegnamecache" \
+    set -- servizio "--poll-interval 15s --option acdirmax=5 --option nonegnamecache --option rsize=1048576 --option wsize=1048576 --option readahead=64" \
         nudo "" \
         nonamedattr "--option nonamedattr"
 fi

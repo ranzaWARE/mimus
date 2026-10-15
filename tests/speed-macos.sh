@@ -45,10 +45,13 @@ variant(){ # nome argomenti...
     c2=$(secs cp "$M/grande.bin" "$D/2.bin")
     c3=$(secs dd if="$M/grande.bin" of=/dev/null bs=4m)
     local b1; b1=$(bytes)
+    # scrittura: copia dal Desktop nella cartella collegata
+    cp "$S/grande.bin" "$D/su.bin"
+    local w1; w1=$(secs cp "$D/su.bin" "$M/caricato.bin")
     local same="uguale"; cmp -s "$S/grande.bin" "$D/2.bin" || same="DIVERSO"
     rm -f "$D"/*.bin
     local re=$(( (b1 - b0) / 1048576 ))
-    local line="scaricato in ${dl}s · copia 1: ${c1}s ($(mbs "$c1") MB/s) · copia 2: ${c2}s ($(mbs "$c2") MB/s) · lettura dd 4M: ${c3}s ($(mbs "$c3") MB/s) · riscaricati dal server durante le copie: ${re} MB · contenuto $same · stato: $(echo "$st" | grep -o '"name":"grande.bin","state":"[a-z]*"')"
+    local line="scaricato in ${dl}s · copia 1: ${c1}s ($(mbs "$c1") MB/s) · copia 2: ${c2}s ($(mbs "$c2") MB/s) · lettura dd 4M: ${c3}s ($(mbs "$c3") MB/s) · scrittura: ${w1}s ($(mbs "$w1") MB/s) · riscaricati dal server durante le copie: ${re} MB · contenuto $same · stato: $(echo "$st" | grep -o '"name":"grande.bin","state":"[a-z]*"')"
     echo "$name: $line"
     echo "::notice title=$name ($*)::$line"
     kill $pid 2>/dev/null; wait $pid 2>/dev/null
@@ -56,9 +59,8 @@ variant(){ # nome argomenti...
 }
 
 if [ $# -eq 0 ]; then
-    set -- servizio "--option acdirmax=5 --option nonegnamecache" \
-        blocchi-1M "--option acdirmax=5 --option nonegnamecache --option rsize=1048576 --option wsize=1048576 --option readahead=64" \
-        blocchi-256K "--option acdirmax=5 --option nonegnamecache --option rsize=262144 --option wsize=262144 --option readahead=32"
+    set -- servizio "--poll-interval 15s --option acdirmax=5 --option nonegnamecache --option rsize=1048576 --option wsize=1048576 --option readahead=64" \
+        come-1.6.0 "--poll-interval 15s --option acdirmax=5 --option nonegnamecache"
 fi
 while [ $# -ge 2 ]; do
     # shellcheck disable=SC2086

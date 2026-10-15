@@ -141,7 +141,7 @@ P=$HOME/Library/LaunchAgents/app.mimus.agent.plist
 ok "servizio creato" "[ -f '$P' ]"
 ok "il servizio usa il programma dentro l'app" "grep -q '$MAC/rclone-mimus' '$P'"
 ok "soglia disco 5G" "grep -q '<string>5G</string>' '$P'"
-ok "cartelle aperte controllate ogni 15s, cache NFS breve" "grep -q '<string>15s</string>' '$P' && grep -q 'acdirmax=5' '$P'"
+ok "cartelle aperte controllate ogni 15s, cache NFS breve, blocchi grandi" "grep -q '<string>15s</string>' '$P' && grep -q 'acdirmax=5' '$P' && grep -q 'rsize=1048576' '$P'"
 ok "credenziali salvate (password offuscata)" "grep -q '^\[mimus\]' $HOME/.config/rclone/rclone.conf && ! grep -q Passw0rd $HOME/.config/rclone/rclone.conf"
 ok "impostazioni salvate senza password" "[ -f '$HOME/Library/Application Support/MIMUS/settings.json' ] && ! grep -q Passw0rd '$HOME/Library/Application Support/MIMUS/settings.json'"
 ok "cartella collegata, col nome scelto" "[ -f $HOME/Lavoro/Doc/a.txt ]"
