@@ -171,6 +171,16 @@ ok "password salvata" "[ \"\$($R reveal -- \$(awk -F' = ' '/^pass/{print \$2}' $
 ok "collegamento riavviato" "! pgrep -f '^$R mount' >/dev/null"
 fusermount -uz $M 2>/dev/null; startm; sleep 3
 ok "funziona con la nuova password" "ls $M/Doc | grep -q X.txt && echo ok > $M/Doc/dopo.txt && sleep 6 && [ -f $S/Doc/dopo.txt ]"
+echo "== 8. file rinominato sul server: la copia sul Mac lo segue"
+stopm; EXTRA=""; startm
+head -c 300000 /dev/urandom > $S/Doc/ren.bin; sleep 11
+rcj vfs/mimus-download '{"path": "Doc/ren.bin"}' >/dev/null
+mv $S/Doc/ren.bin $S/Doc/ren2.bin; sleep 11; ls $M/Doc >/dev/null
+rcj vfs/mimus-orphans '{}' > $T/orph.json
+CD=$T/cache/vfs/mimus/Doc
+ok "copia spostata al nuovo nome, non riscaricata" "grep -q 'Doc/ren2.bin' $T/orph.json && [ -f $CD/ren2.bin ] && [ ! -f $CD/ren.bin ]"
+ok "contenuto giusto" "cmp -s $S/Doc/ren2.bin $M/Doc/ren2.bin"
+
 stopm; srv_off
 printf 'Passw0rd\nPassw0rd\n' | smbpasswd -c $T/smb.conf -s smbtest >/dev/null
 

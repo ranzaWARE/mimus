@@ -3,6 +3,17 @@
 Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
 `rclone-mimus version` (es. `v1.72.0-mimus-1.0.0`).
 
+## 1.6.3 — 2026-10-15
+
+- **File rinominati sul server**: se un collega rinomina un file che hai sul
+  Mac, la copia segue il nuovo nome (resta verde, non viene riscaricata).
+  Prima il file rinominato risultava nuovo (solo sul server) e la vecchia
+  copia veniva tolta. MIMUS riconosce la rinomina quando nella stessa cartella
+  c'è un solo file con la stessa dimensione e data di modifica: se ce n'è più
+  di uno non indovina.
+- Le copie di file cancellati o rinominati sul server vengono sistemate
+  pochi secondi dopo che la cartella è stata riletta (prima: entro 10 minuti).
+
 ## 1.6.2 — 2026-10-15
 
 - **Copie di file cancellati sul server**: se un file viene cancellato o

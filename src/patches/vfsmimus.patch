@@ -1,9 +1,9 @@
 diff --git a/vfs/mimus.go b/vfs/mimus.go
 new file mode 100644
-index 0000000..2f06c58
+index 0000000..e9563c8
 --- /dev/null
 +++ b/vfs/mimus.go
-@@ -0,0 +1,354 @@
+@@ -0,0 +1,414 @@
 +package vfs
 +
 +// MIMUS: what the Finder extension needs. For the files of a folder: on
@@ -20,6 +20,7 @@ index 0000000..2f06c58
 +
 +	"github.com/rclone/rclone/fs"
 +	"github.com/rclone/rclone/fs/rc"
++	"github.com/rclone/rclone/vfs/vfscache"
 +)
 +
 +// Pinner can be implemented by the remote: paths (files or folders) kept
@@ -89,7 +90,10 @@ index 0000000..2f06c58
 +		Help: `Parameters: fs (optional). Only copies with no changes to upload and
 +not in use, of files the remote says are gone (GoneChecker).
 +
-+Returns removed (list).
++A copy whose file was renamed on the server (same folder, same size and
++modification time, only one candidate) follows the new name instead.
++
++Returns removed and renamed (lists).
 +`,
 +	})
 +	rc.Add(rc.Call{
@@ -339,10 +343,10 @@ index 0000000..2f06c58
 +	if err != nil {
 +		return nil, err
 +	}
-+	removed := []string{}
++	removed, renamed := []string{}, []string{}
 +	g, ok := vfs.f.(GoneChecker)
 +	if !ok || vfs.cache == nil {
-+		return rc.Params{"removed": removed}, nil
++		return rc.Params{"removed": removed, "renamed": renamed}, nil
 +	}
 +	for _, name := range vfs.cache.Names("") {
 +		if ctx.Err() != nil {
@@ -352,18 +356,74 @@ index 0000000..2f06c58
 +		if !st.Cached || st.Dirty || st.Open {
 +			continue
 +		}
-+		if g.Gone(ctx, name) && vfs.cache.Evict(ctx, name) {
++		if !g.Gone(ctx, name) {
++			continue
++		}
++		// renamed on the server: the copy follows the new name, so it is
++		// not downloaded again
++		if newName, o := vfs.mimusRenamedTo(ctx, name, st); newName != "" {
++			if err := vfs.cache.Rename(name, newName, o); err == nil {
++				fs.Infof(nil, "MIMUS: %q rinominato sul server in %q: la copia su questo Mac lo segue", name, newName)
++				renamed = append(renamed, newName)
++				continue
++			} else {
++				fs.Errorf(nil, "MIMUS: copia di %q non spostata in %q: %v", name, newName, err)
++			}
++		}
++		if vfs.cache.Evict(ctx, name) {
 +			removed = append(removed, name)
 +		}
 +	}
-+	return rc.Params{"removed": removed}, nil
++	return rc.Params{"removed": removed, "renamed": renamed}, nil
++}
++
++// mimusRenamedTo looks, in the same folder, for the file name was renamed
++// to on the server: exactly one file, without a copy here, that is the same
++// remote version (same fingerprint: size, modification time and hash when
++// the remote has one; a rename keeps them). "" if none.
++func (vfs *VFS) mimusRenamedTo(ctx context.Context, name string, st vfscache.ItemState) (string, fs.Object) {
++	if st.Size <= 0 || st.Fingerprint == "" {
++		return "", nil
++	}
++	dir := path.Dir(name)
++	if dir == "." {
++		dir = ""
++	}
++	node, err := vfs.Stat(dir)
++	if err != nil {
++		return "", nil
++	}
++	d, ok := node.(*Dir)
++	if !ok {
++		return "", nil
++	}
++	nodes, err := d.ReadDirAll()
++	if err != nil {
++		return "", nil
++	}
++	found, foundObj := "", fs.Object(nil)
++	for _, n := range nodes {
++		cand := path.Join(dir, n.Name())
++		if n.IsDir() || cand == name || n.Size() != st.Size || vfs.cache.State(cand).Known {
++			continue
++		}
++		o, err := vfs.f.NewObject(ctx, cand)
++		if err != nil || fs.Fingerprint(ctx, o, vfs.Opt.FastFingerprint) != st.Fingerprint {
++			continue
++		}
++		if found != "" {
++			return "", nil // more than one: do not guess
++		}
++		found, foundObj = cand, o
++	}
++	return found, foundObj
 +}
 diff --git a/vfs/mimus_test.go b/vfs/mimus_test.go
 new file mode 100644
-index 0000000..c43f285
+index 0000000..1690285
 --- /dev/null
 +++ b/vfs/mimus_test.go
-@@ -0,0 +1,163 @@
+@@ -0,0 +1,201 @@
 +package vfs
 +
 +import (
@@ -371,6 +431,7 @@ index 0000000..c43f285
 +	"os"
 +	"sync"
 +	"testing"
++	"time"
 +
 +	"github.com/rclone/rclone/fs"
 +	"github.com/rclone/rclone/fs/rc"
@@ -527,12 +588,49 @@ index 0000000..c43f285
 +	assert.False(t, vfs.cache.State("dir/a.txt").Cached)
 +	assert.Equal(t, MimusLocal, vfs.mimusState("dir/b.txt"))
 +}
++
++func TestMimusOrphansRenamed(t *testing.T) {
++	ctx := context.Background()
++	opt := vfscommon.Opt
++	opt.CacheMode = vfscommon.CacheModeFull
++	opt.DirCacheTime = fs.Duration(time.Millisecond)
++	r := fstest.NewRun(t)
++	pf := &pinFs{Fs: r.Fremote, pins: map[string]bool{}}
++	vfs := New(pf, &opt)
++	t.Cleanup(func() { cleanupVFS(t, vfs) })
++	a := r.WriteObject(ctx, "dir/a.txt", "contenuto a", t1)
++	r.WriteObject(ctx, "dir/b.txt", "contenuto b!", t1)
++	fsp := rc.Params{"fs": fs.ConfigString(pf)}
++	_, err := rc.Calls.Get("vfs/mimus-download").Fn(ctx, rc.Params{"fs": fs.ConfigString(pf), "path": "dir"})
++	require.NoError(t, err)
++
++	// a.txt renamed on the server by someone else (same size and date)
++	o, err := r.Fremote.NewObject(ctx, a.Path)
++	require.NoError(t, err)
++	_, err = r.Fremote.Features().Move(ctx, o, "dir/a-nuovo.txt")
++	require.NoError(t, err)
++	time.Sleep(10 * time.Millisecond)
++	out, err := rc.Calls.Get("vfs/mimus-orphans").Fn(ctx, fsp)
++	require.NoError(t, err)
++	assert.Equal(t, []string{"dir/a-nuovo.txt"}, out["renamed"])
++	assert.Equal(t, []string{}, out["removed"])
++	assert.Equal(t, MimusLocal, vfs.mimusState("dir/a-nuovo.txt"))
++	assert.False(t, vfs.cache.State("dir/a.txt").Known)
++
++	// the copy is the right one: read without downloading
++	h, err := vfs.OpenFile("dir/a-nuovo.txt", os.O_RDONLY, 0)
++	require.NoError(t, err)
++	buf := make([]byte, 64)
++	n, _ := h.Read(buf)
++	require.NoError(t, h.Close())
++	assert.Equal(t, "contenuto a", string(buf[:n]))
++}
 diff --git a/vfs/vfscache/mimus.go b/vfs/vfscache/mimus.go
 new file mode 100644
-index 0000000..1a6c2a9
+index 0000000..d0a2a4b
 --- /dev/null
 +++ b/vfs/vfscache/mimus.go
-@@ -0,0 +1,78 @@
+@@ -0,0 +1,84 @@
 +package vfscache
 +
 +// MIMUS: state of a file in the cache (for the Finder: on this Mac, only on
@@ -547,10 +645,13 @@ index 0000000..1a6c2a9
 +
 +// ItemState describes a file in the cache
 +type ItemState struct {
-+	Cached   bool // part or all of the file is on this computer
-+	Complete bool // the whole file is on this computer
-+	Dirty    bool // changed here, not yet uploaded
-+	Open     bool // in use
++	Known       bool // the cache has an entry for the file
++	Cached      bool // part or all of the file is on this computer
++	Complete    bool // the whole file is on this computer
++	Dirty       bool // changed here, not yet uploaded
++	Open        bool // in use
++	Size        int64
++	Fingerprint string // of the remote version the copy comes from
 +}
 +
 +// State returns the cache state of the file name
@@ -561,6 +662,9 @@ index 0000000..1a6c2a9
 +	}
 +	item.mu.Lock()
 +	defer item.mu.Unlock()
++	st.Known = true
++	st.Size = item.info.Size
++	st.Fingerprint = item.info.Fingerprint
 +	st.Cached = item._exists()
 +	st.Complete = st.Cached && item._present()
 +	st.Dirty = item.info.Dirty

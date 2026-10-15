@@ -149,6 +149,9 @@ func (f *Fs) pollWatched(ctx context.Context, notify func(string, fs.EntryType),
 		notify(dir, fs.EntryDirectory)
 		changed++
 	}
+	if changed > 0 {
+		f.wakePins() // file cancellati o rinominati: copie sul Mac da sistemare subito
+	}
 	return changed
 }
 
