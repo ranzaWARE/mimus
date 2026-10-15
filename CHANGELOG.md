@@ -3,6 +3,14 @@
 Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
 `rclone-mimus version` (es. `v1.72.0-mimus-1.0.0`).
 
+## 1.7.2 — 2026-10-15
+
+- **Pallini nel Finder dopo «Riavvia collegamento»**: sparivano finché non si
+  riapriva la cartella. Il riavvio smonta e rimonta la cartella e il Finder
+  dimentica i pallini; ora l'estensione si accorge che il collegamento è
+  ripartito (entro 2 secondi) e li rimette. Vale anche dopo un aggiornamento
+  o un riavvio automatico del collegamento.
+
 ## 1.7.1 — 2026-10-15
 
 - **Registro più pulito offline**: aprire o modificare un file che non è sul

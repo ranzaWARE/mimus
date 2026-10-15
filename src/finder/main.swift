@@ -149,6 +149,8 @@ final class FinderSync: FIFinderSync {
     var dirPinned: [String: Bool] = [:]   // cartella -> dentro una cartella mantenuta
     var timer: DispatchSourceTimer?
     var ticks = 0
+    var servicePid = 0                    // processo del collegamento
+    var serviceDown = false
 
     override init() {
         super.init()
@@ -196,10 +198,44 @@ final class FinderSync: FIFinderSync {
     func tick() {
         ticks += 1
         if ticks % 20 == 0 { updateRoot() }
+        if ticks % 4 == 0 { checkService() }
         var dirs = pending
         pending.removeAll()
         if ticks % 6 == 0 { dirs.formUnion(observed) }
         for d in dirs { refresh(d) }
+    }
+
+    // «Riavvia collegamento», aggiornamento, riavvio dopo un errore: la
+    // cartella viene smontata e rimontata e il Finder dimentica i pallini
+    // (e a volte che deve chiederli). Ogni 2 secondi si guarda se il
+    // collegamento è ripartito (processo diverso, o di nuovo raggiungibile):
+    // allora il Finder viene registrato di nuovo e i pallini rimandati tutti.
+    func checkService() {
+        guard let out = rcCall("core/pid", [:]), let pid = out["pid"] as? Int else {
+            if !serviceDown {
+                serviceDown = true
+                dlog("collegamento non raggiungibile")
+            }
+            return
+        }
+        if serviceDown || (servicePid != 0 && pid != servicePid) {
+            dlog("collegamento ripartito: rimetto i pallini")
+            resetBadges()
+        }
+        serviceDown = false
+        servicePid = pid
+    }
+
+    func resetBadges() {
+        shown.removeAll()
+        pending.formUnion(observed)
+        pending.insert("")
+        let url = URL(fileURLWithPath: root, isDirectory: true)
+        DispatchQueue.main.async {
+            let c = FIFinderSyncController.default()
+            c.directoryURLs = []
+            c.directoryURLs = [url]
+        }
     }
 
     func refresh(_ dir: String) {
