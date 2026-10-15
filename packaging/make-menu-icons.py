@@ -139,24 +139,29 @@ def to_image(g, scale):
     return im
 
 
-here = os.path.dirname(os.path.abspath(__file__))
-outdir = os.path.join(here, "menubar")
-os.makedirs(outdir, exist_ok=True)
-fr = frames()
-for name, g in fr.items():
-    to_image(g, 1).save(os.path.join(outdir, f"{name}.png"))
-    to_image(g, 2).save(os.path.join(outdir, f"{name}@2x.png"))
+def main():
+    here = os.path.dirname(os.path.abspath(__file__))
+    outdir = os.path.join(here, "menubar")
+    os.makedirs(outdir, exist_ok=True)
+    fr = frames()
+    for name, g in fr.items():
+        to_image(g, 1).save(os.path.join(outdir, f"{name}.png"))
+        to_image(g, 2).save(os.path.join(outdir, f"{name}@2x.png"))
 
-# anteprima: tutti i fotogrammi su barra chiara e scura, ingranditi
-names = list(fr)
-S = 6
-prev = Image.new("RGBA", ((W * S + 12) * len(names) + 12, (H * S + 12) * 2 + 12), (0, 0, 0, 0))
-for row, (bg, fg) in enumerate([((236, 236, 236, 255), (30, 30, 30, 255)), ((40, 40, 44, 255), (235, 235, 235, 255))]):
-    band = Image.new("RGBA", (prev.width, H * S + 12), bg)
-    prev.paste(band, (0, 12 + row * (H * S + 12)))
-    for i, n in enumerate(names):
-        im = to_image(fr[n], S)
-        col = Image.new("RGBA", im.size, fg)
-        prev.paste(col, (12 + i * (W * S + 12), 18 + row * (H * S + 12)), im)
-prev.save(os.path.join(outdir, "preview.png"))
-print("ok:", ", ".join(names))
+    # anteprima: tutti i fotogrammi su barra chiara e scura, ingranditi
+    names = list(fr)
+    S = 6
+    prev = Image.new("RGBA", ((W * S + 12) * len(names) + 12, (H * S + 12) * 2 + 12), (0, 0, 0, 0))
+    for row, (bg, fg) in enumerate([((236, 236, 236, 255), (30, 30, 30, 255)), ((40, 40, 44, 255), (235, 235, 235, 255))]):
+        band = Image.new("RGBA", (prev.width, H * S + 12), bg)
+        prev.paste(band, (0, 12 + row * (H * S + 12)))
+        for i, n in enumerate(names):
+            im = to_image(fr[n], S)
+            col = Image.new("RGBA", im.size, fg)
+            prev.paste(col, (12 + i * (W * S + 12), 18 + row * (H * S + 12)), im)
+    prev.save(os.path.join(outdir, "preview.png"))
+    print("ok:", ", ".join(names))
+
+
+if __name__ == "__main__":
+    main()
