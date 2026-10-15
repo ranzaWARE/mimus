@@ -164,7 +164,6 @@ type Fs struct {
 	walkWake   chan struct{}
 	watch      watchSet
 	pins       *pinSet
-	orphans    sync.Map
 	lnOnce     sync.Once // «Rete locale» hint shown once
 	replaying  atomic.Bool
 	walking    atomic.Bool
@@ -237,6 +236,8 @@ func NewFs(ctx context.Context, name, rpath string, m configmap.Mapper) (fs.Fs, 
 		go f.replayer(bg)
 		f.wg.Add(1)
 		go f.pinKeeper(bg)
+		// first look for missing pinned files and leftover copies soon after the start
+		time.AfterFunc(45*time.Second, f.wakePins)
 		if opt.WalkInterval > 0 {
 			f.wg.Add(1)
 			go f.walker(bg)

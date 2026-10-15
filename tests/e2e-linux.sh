@@ -127,7 +127,7 @@ stopm; EXTRA="--vfs-cache-min-free-space 1P"; echo q1 > $S/Q/a.txt; echo q2 > $S
 C=$T/cache/vfs/mimus/Q
 cat $M/Q/a.txt $M/Q/b.txt >/dev/null; rm $S/Q/b.txt; sleep 12
 ok "tolto il file al sicuro sul server" "[ ! -f $C/a.txt ]"
-ok "tenuto il file non più sul server" "[ -f $C/b.txt ]"
+ok "tolto anche il file non più sul server" "[ ! -f $C/b.txt ]"
 
 echo "== 6c. sul Mac / solo sul server: scarica, mantieni sempre, togli dal Mac"
 rcj(){ curl -s -X POST -H 'Content-Type: application/json' -d "$2" "http://127.0.0.1:5573/$1"; }
@@ -148,6 +148,9 @@ ok "dentro una cartella mantenuta non si toglie da solo" "rcj vfs/mimus-evict '{
 rcj vfs/mimus-evict '{"paths": ["P/sub", "P/p1.txt"]}' >/dev/null
 ok "tolti dal Mac e non più mantenuti" "[ ! -f $CP/p1.txt ] && [ ! -f $CP/sub/p2.txt ] && states P | grep -Eq 'p1.txt=remote( |$)' && states P | grep -Eq 'sub=folder( |$)'"
 ok "sempre sul server" "[ -f $S/P/p1.txt ] && [ -f $S/P/sub/p2.txt ]"
+rcj vfs/mimus-download '{"path": "P/sub", "pin": true}' >/dev/null; rm $S/P/sub/p2.txt; sleep 11; ls $M/P/sub >/dev/null
+rcj vfs/mimus-orphans '{}' >/dev/null; sleep 6
+ok "copia di un file cancellato sul server: tolta anche se mantenuto" "[ ! -f $CP/sub/p2.txt ] && [ -f $CP/sub/p3.txt ]"
 stopm; EXTRA=""; startm
 
 echo "== 6b. sottocartella: avvio senza server"

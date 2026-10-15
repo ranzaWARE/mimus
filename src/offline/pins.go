@@ -167,6 +167,27 @@ func (f *Fs) pinKeeper(ctx context.Context) {
 		case <-f.pins.wake:
 		}
 		f.keepPinned(ctx)
+		f.cleanOrphans(ctx)
+	}
+}
+
+// cleanOrphans removes the copies kept on this Mac of files that are gone
+// from the remote (rc vfs/mimus-orphans, same process)
+func (f *Fs) cleanOrphans(ctx context.Context) {
+	if !f.isOnline() || f.replaying.Load() {
+		return
+	}
+	call := rc.Calls.Get("vfs/mimus-orphans")
+	if call == nil {
+		return
+	}
+	out, err := call.Fn(ctx, rc.Params{})
+	if err != nil {
+		fs.Debugf(f, "copie di file non più sul server: %v", err)
+		return
+	}
+	if removed, _ := out["removed"].([]string); len(removed) > 0 {
+		fs.Infof(f, "tolte da questo Mac %d copie di file non più sul server remoto", len(removed))
 	}
 }
 

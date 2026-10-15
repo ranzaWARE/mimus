@@ -1,9 +1,9 @@
 diff --git a/vfs/mimus.go b/vfs/mimus.go
 new file mode 100644
-index 0000000..d9bf724
+index 0000000..2f06c58
 --- /dev/null
 +++ b/vfs/mimus.go
-@@ -0,0 +1,312 @@
+@@ -0,0 +1,354 @@
 +package vfs
 +
 +// MIMUS: what the Finder extension needs. For the files of a folder: on
@@ -31,6 +31,13 @@ index 0000000..d9bf724
 +	SetPinned(ctx context.Context, remote string, on bool) error
 +	// PinnedPaths lists what is kept always
 +	PinnedPaths() []string
++}
++
++// GoneChecker can be implemented by the remote: Gone(remote) = the file is
++// no longer on the server (deleted or renamed there by someone else), so the
++// copy kept on this computer is useless
++type GoneChecker interface {
++	Gone(ctx context.Context, remote string) bool
 +}
 +
 +// States of a file for the Finder
@@ -73,6 +80,16 @@ index 0000000..d9bf724
 +		Help: `Parameters: paths (list) or path, on (true/false), fs (optional).
 +What is kept is downloaded in background by the remote and never removed
 +from the cache. Stopping does not remove the local copy.
++`,
++	})
++	rc.Add(rc.Call{
++		Path:  "vfs/mimus-orphans",
++		Fn:    rcMimusOrphans,
++		Title: "MIMUS: remove the local copies of files gone from the server.",
++		Help: `Parameters: fs (optional). Only copies with no changes to upload and
++not in use, of files the remote says are gone (GoneChecker).
++
++Returns removed (list).
 +`,
 +	})
 +	rc.Add(rc.Call{
@@ -316,12 +333,37 @@ index 0000000..d9bf724
 +	}
 +	return rc.Params{"pinned": p.PinnedPaths()}, nil
 +}
++
++func rcMimusOrphans(ctx context.Context, in rc.Params) (rc.Params, error) {
++	vfs, err := getVFS(in)
++	if err != nil {
++		return nil, err
++	}
++	removed := []string{}
++	g, ok := vfs.f.(GoneChecker)
++	if !ok || vfs.cache == nil {
++		return rc.Params{"removed": removed}, nil
++	}
++	for _, name := range vfs.cache.Names("") {
++		if ctx.Err() != nil {
++			break
++		}
++		st := vfs.cache.State(name)
++		if !st.Cached || st.Dirty || st.Open {
++			continue
++		}
++		if g.Gone(ctx, name) && vfs.cache.Evict(ctx, name) {
++			removed = append(removed, name)
++		}
++	}
++	return rc.Params{"removed": removed}, nil
++}
 diff --git a/vfs/mimus_test.go b/vfs/mimus_test.go
 new file mode 100644
-index 0000000..2c5ddba
+index 0000000..c43f285
 --- /dev/null
 +++ b/vfs/mimus_test.go
-@@ -0,0 +1,132 @@
+@@ -0,0 +1,163 @@
 +package vfs
 +
 +import (
@@ -368,6 +410,12 @@ index 0000000..2c5ddba
 +}
 +
 +func (f *pinFs) PinnedPaths() []string { return nil }
++
++// Gone: not on the test remote any more
++func (f *pinFs) Gone(ctx context.Context, remote string) bool {
++	_, err := f.Fs.NewObject(ctx, remote)
++	return err == fs.ErrorObjectNotFound
++}
 +
 +func mimusStates(t *testing.T, dir string) map[string]mimusEntry {
 +	out, err := rc.Calls.Get("vfs/mimus-states").Fn(context.Background(), rc.Params{"dir": dir})
@@ -453,6 +501,31 @@ index 0000000..2c5ddba
 +	require.NoError(t, err)
 +	assert.False(t, pf.IsPinned("dir/a.txt"))
 +	assert.Equal(t, MimusRemote, vfs.mimusState("dir/a.txt"))
++}
++
++func TestMimusOrphans(t *testing.T) {
++	ctx := context.Background()
++	opt := vfscommon.Opt
++	opt.CacheMode = vfscommon.CacheModeFull
++	r := fstest.NewRun(t)
++	pf := &pinFs{Fs: r.Fremote, pins: map[string]bool{}}
++	vfs := New(pf, &opt)
++	t.Cleanup(func() { cleanupVFS(t, vfs) })
++	a := r.WriteObject(ctx, "dir/a.txt", "contenuto a", t1)
++	r.WriteObject(ctx, "dir/b.txt", "contenuto b", t1)
++	fsp := rc.Params{"fs": fs.ConfigString(pf)}
++	_, err := rc.Calls.Get("vfs/mimus-download").Fn(ctx, rc.Params{"fs": fs.ConfigString(pf), "path": "dir"})
++	require.NoError(t, err)
++
++	// a.txt deleted on the server by someone else: its copy here goes
++	o, err := r.Fremote.NewObject(ctx, a.Path)
++	require.NoError(t, err)
++	require.NoError(t, o.Remove(ctx))
++	out, err := rc.Calls.Get("vfs/mimus-orphans").Fn(ctx, fsp)
++	require.NoError(t, err)
++	assert.Equal(t, []string{"dir/a.txt"}, out["removed"])
++	assert.False(t, vfs.cache.State("dir/a.txt").Cached)
++	assert.Equal(t, MimusLocal, vfs.mimusState("dir/b.txt"))
 +}
 diff --git a/vfs/vfscache/mimus.go b/vfs/vfscache/mimus.go
 new file mode 100644

@@ -7,6 +7,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/rclone/rclone/fs"
@@ -98,29 +99,51 @@ func (f *Fs) ResolveUploadConflict(ctx context.Context, name, baseFingerprint st
 
 // ---------- cache eviction (called by the patched VFS cache) ----------
 
-// CacheEvictionAllowed is asked before a local copy is removed (not used
-// for vfs-cache-max-age, or disk below the free space threshold): allowed
-// only if the remote is reachable and still holds the file.
+// CacheEvictionAllowed is asked before a local copy is removed (by the
+// cache cleaning, or «Togli da questo Mac»): allowed only if the remote is
+// reachable and still holds the file, or if the file is gone from the
+// remote (deleted or renamed there): the copy here is then useless. Only
+// copies without changes to upload and not in use get here.
 func (f *Fs) CacheEvictionAllowed(ctx context.Context, remote string) bool {
 	if f.IsPinned(remote) {
-		return false // «Mantieni sempre su questo Mac»
+		// «Mantieni sempre su questo Mac»: leaves only if gone from the remote
+		return f.Gone(ctx, remote)
 	}
 	if !f.isOnline() || f.journal.touchesPath(remote) {
 		return false
 	}
 	_, err := f.Fs.NewObject(ctx, remote)
 	if err != nil {
-		if errors.Is(err, fs.ErrorObjectNotFound) {
-			if _, warned := f.orphans.LoadOrStore(remote, true); !warned {
-				fs.Logf(f, "%q non è più sul server remoto: copia locale mantenuta in cache", remote)
-			}
-		} else {
-			f.netErr(err)
+		if errors.Is(err, fs.ErrorObjectNotFound) || errors.Is(err, fs.ErrorDirNotFound) {
+			fs.Infof(f, "%q non è più sul server remoto: tolta anche la copia su questo Mac", remote)
+			return true
 		}
+		f.netErr(err)
 		return false
 	}
 	fs.Infof(f, "%q è sul server remoto: tolto dalla cache locale", remote)
 	return true
+}
+
+// Gone tells the VFS (patch MIMUS, vfs/mimus-orphans) that a file kept on
+// this Mac is no longer on the remote: deleted or renamed there by someone
+// else. Candidates are the files missing from the last listing of their
+// folder (kept fresh by browsing, the open folders check and the complete
+// reads); the remote is asked only about them.
+func (f *Fs) Gone(ctx context.Context, remote string) bool {
+	if !f.isOnline() || f.journal.touchesPath(remote) {
+		return false
+	}
+	dir, name := path.Split(remote)
+	if saved, ok := f.store.load(strings.TrimSuffix(dir, "/")); ok {
+		for _, e := range saved {
+			if e.Name == name {
+				return false
+			}
+		}
+	}
+	_, err := f.Fs.NewObject(ctx, remote)
+	return errors.Is(err, fs.ErrorObjectNotFound) || errors.Is(err, fs.ErrorDirNotFound)
 }
 
 // ---------- free disk space ----------

@@ -431,3 +431,57 @@ func TestPins(t *testing.T) {
 		t.Fatalf("deleted folder still kept: %v", f.PinnedPaths())
 	}
 }
+
+func TestGone(t *testing.T) {
+	ctx := context.Background()
+	f, base, setOnline := newTestFs(t)
+	must(t, os.MkdirAll(filepath.Join(base, "d"), 0o755))
+	must(t, os.WriteFile(filepath.Join(base, "d/a.txt"), []byte("x"), 0o644))
+	if _, err := f.List(ctx, "d"); err != nil {
+		t.Fatal(err)
+	}
+	if f.Gone(ctx, "d/a.txt") {
+		t.Fatal("file on the server reported gone")
+	}
+	must(t, os.Remove(filepath.Join(base, "d/a.txt")))
+	if f.Gone(ctx, "d/a.txt") {
+		t.Fatal("gone before the folder was read again") // saved listing still has it
+	}
+	if !f.CacheEvictionAllowed(ctx, "d/a.txt") {
+		t.Fatal("copy of a file deleted on the server kept")
+	}
+	if _, err := f.List(ctx, "d"); err != nil {
+		t.Fatal(err)
+	}
+	if !f.Gone(ctx, "d/a.txt") {
+		t.Fatal("file deleted on the server not reported gone")
+	}
+	// folder deleted on the server too
+	must(t, os.RemoveAll(filepath.Join(base, "d")))
+	if !f.Gone(ctx, "d/b.txt") {
+		t.Fatal("file in a folder deleted on the server not reported gone")
+	}
+	// never while offline, or kept always
+	setOnline(false)
+	if f.Gone(ctx, "d/a.txt") {
+		t.Fatal("gone while offline")
+	}
+	setOnline(true)
+	// kept always: removed only when gone from the server
+	must(t, os.MkdirAll(filepath.Join(base, "k"), 0o755))
+	must(t, os.WriteFile(filepath.Join(base, "k/c.txt"), []byte("x"), 0o644))
+	must(t, f.SetPinned(ctx, "k", true))
+	if _, err := f.List(ctx, "k"); err != nil {
+		t.Fatal(err)
+	}
+	if f.CacheEvictionAllowed(ctx, "k/c.txt") {
+		t.Fatal("kept file removed")
+	}
+	must(t, os.Remove(filepath.Join(base, "k/c.txt")))
+	if _, err := f.List(ctx, "k"); err != nil {
+		t.Fatal(err)
+	}
+	if !f.CacheEvictionAllowed(ctx, "k/c.txt") {
+		t.Fatal("kept file gone from the server not removed")
+	}
+}

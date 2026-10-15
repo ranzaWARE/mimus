@@ -427,6 +427,9 @@ td.icon {{ width: 64px; text-align: center; vertical-align: middle; }}
     <tr><td>Mantieni sempre su questo Mac</td><td>scarica e non toglie mai; per le cartelle vale anche per i file aggiunti dopo. Per smettere: <em>Non mantenere più sempre su questo Mac</em> (la copia resta finché non serve spazio)</td></tr>
     <tr><td>Togli da questo Mac (resta sul server)</td><td>libera spazio: toglie la copia dal Mac, il file resta sul server. Non tocca i file con modifiche ancora da caricare né quelli aperti</td></tr>
   </table>
+  <p>Se un collega cancella o rinomina un file sul server, anche la sua copia su questo Mac viene tolta da sola (solo se non hai modifiche da caricare).</p>
+  <h3>Vedere con mano i file sul Mac</h3>
+  <p>Le copie stanno in <code>~/Library/Application Support/MIMUS/cache/vfs/mimus</code> (Finder → ⇧⌘G e incolla il percorso; se in Impostazioni hai scelto un’altra posizione per i file: quella cartella, poi <code>vfs/mimus</code>). Con ⌘I su un file, «Dimensione» indica anche quanto c’è davvero sul disco: se è uguale alla dimensione, il file è tutto sul Mac. Non modificare né cancellare niente lì dentro: per togliere una copia usa il tasto destro → <em>Togli da questo Mac</em>.</p>
   <div class="note">I pallini e il menu sono un’estensione del Finder: MIMUS la attiva da sola. Se non li vedi: Impostazioni di Sistema → Generali → <strong>Elementi login ed estensioni</strong> → Estensioni → <strong>Finder</strong> (o «Aggiunte») → attiva MIMUS. Si possono spegnere da <a href="#impostazioni">Impostazioni</a> → <em>Pallini e menu nel Finder</em>.</div>
 </section>
 

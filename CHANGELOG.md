@@ -3,6 +3,15 @@
 Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
 `rclone-mimus version` (es. `v1.72.0-mimus-1.0.0`).
 
+## 1.6.2 — 2026-10-15
+
+- **Copie di file cancellati sul server**: se un file viene cancellato o
+  rinominato sul server da altri, anche la sua copia su questo Mac viene tolta
+  (solo se non ha modifiche da caricare e non è aperto). Prima restava sul
+  Mac per sempre, occupando spazio. Il controllo gira ogni 10 minuti, usando
+  l'ultimo elenco noto della cartella.
+- Guida: come vedere con mano i file davvero sul Mac.
+
 ## 1.6.1 — 2026-10-15
 
 - **File già sul Mac molto più veloci**: copiare o aprire un file col pallino
