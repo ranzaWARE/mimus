@@ -3,6 +3,22 @@
 Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
 `rclone-mimus version` (es. `v1.72.0-mimus-1.0.0`).
 
+## 1.5.2 — 2026-10-15
+
+- **Le finestre del Finder si aggiornano da sole**: quando cambia qualcosa sul
+  server remoto in una cartella aperta (anche la cartella principale), il
+  Finder lo mostra in circa 15 secondi senza dover uscire e rientrare.
+  Misurato su un Mac vero con le notifiche che usa il Finder.
+- **Corretto «Operation not permitted»** con le app che creano file
+  temporanei o di blocco in modo esclusivo (O_EXCL): per esempio `ditto`, il
+  salvataggio sicuro di molte app, alcuni file di blocco. Prima la creazione
+  veniva rifiutata.
+- Limite noto, dovuto a macOS e non risolvibile con questo tipo di
+  collegamento: niente tag del Finder né altri attributi estesi nella cartella
+  collegata. Il Finder copia normalmente; dal Terminale usa `cp -X`.
+- La compilazione su GitHub ora prova anche, su un Mac vero, che le novità dal
+  server arrivino al Finder entro un minuto e che la creazione esclusiva funzioni.
+
 ## 1.5.1 — 2026-10-15
 
 - **Novità dei colleghi molto più veloci**: le cartelle aperte di recente (fino

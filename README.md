@@ -52,7 +52,8 @@ rifiuta se ci sono modifiche non ancora caricate sul server remoto.
   problema. Stesso colore delle icone di sistema; si può togliere dalle Impostazioni.
 
 **Limiti:** offline vedi la cartella remota com'era all'ultima lettura; i file mai aperti
-non si aprono offline; se il Mac si rompe mentre è offline, le modifiche non
+non si aprono offline; niente tag del Finder né attributi estesi (dal Terminale
+`cp -X`); se il Mac si rompe mentre è offline, le modifiche non
 ancora caricate si perdono.
 
 ## Come è fatta

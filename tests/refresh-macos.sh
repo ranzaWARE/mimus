@@ -38,7 +38,7 @@ for p in paths:
     if p not in seen:
         print(f"{p} mai", flush=True)
 PY
-RESULTS=""
+RESULTS="" FAILS=0
 
 measure(){ # nome argomenti...
     local name=$1; shift
@@ -56,6 +56,10 @@ measure(){ # nome argomenti...
     # il Finder guarda le cartelle: le elenca e resta in ascolto (kqueue,
     # come una finestra aperta)
     ls "$M" "$M/sub1" "$M/sub2" "$M/sub3" > /dev/null; cat "$M/sub2/f.txt" > /dev/null
+    # le app creano file temporanei e di blocco in modo esclusivo (O_EXCL)
+    if ! python3 -c "import os,sys; os.close(os.open(sys.argv[1], os.O_CREAT|os.O_EXCL|os.O_WRONLY, 0o644))" "$M/blocco.tmp"; then
+        echo "::error title=$name::creazione esclusiva (O_EXCL) non riuscita"; FAILS=$((FAILS + 1))
+    fi
     sleep 3
     python3 "$T/kq.py" "$KQLIMIT" "$M" "$M/sub1" "$M/sub3" > "$T/kq.out" 2>&1 &
     local kq=$!
@@ -78,6 +82,9 @@ measure(){ # nome argomenti...
         sleep 1
     done
     local line="Finder avvisato: ${fk:-mai} · visibili (dall'inizio): file nuovo ${a:-oltre $LIMIT}s · cartella nuova in cima ${b:-oltre $LIMIT}s · file modificato ${c:-oltre $LIMIT}s · file cancellato ${d:-oltre $LIMIT}s"
+    if [ -z "$fk" ] || [[ "$fk" == *mai* ]] || [ -z "$a" ] || [ -z "$b" ] || [ -z "$c" ] || [ -z "$d" ]; then
+        FAILS=$((FAILS + 1)); echo "::error title=$name::$line"
+    fi
     echo "$name: $line"
     echo "::notice title=$name ($*)::$line"
     RESULTS="$RESULTS$name: $line"$'\n'
@@ -94,3 +101,4 @@ while [ $# -ge 2 ]; do
     shift 2
 done
 echo; printf '%s' "$RESULTS"
+exit $FAILS

@@ -25,6 +25,8 @@ jobs:
         env:
           REQUIRE_MENU: '1'
         run: bash scripts/ci-run.sh app bash scripts/build-mac-app.sh
+      - name: Novità dal server visibili nel Finder in pochi secondi
+        run: LIMIT=60 KQLIMIT=45 bash tests/refresh-macos.sh
       - name: Prova dell'icona nella barra dei menu
         run: bash tests/menubar-macos.sh
       - name: Prova dell'aggiornamento automatico
