@@ -80,7 +80,7 @@ for _ in $(seq 60); do mount | grep -q " on $M " && break; sleep 0.5; done
 open "$M"; sleep 15
 FL="$HOME/Library/Containers/app.mimus.finder/Data/tmp/mimus-finder.log"
 P2="$(pgrep -f MIMUSFinder | tr '\n' ' ')"
-echo "::notice title=finder 1 dopo il riavvio (nessun intervento)::prima: $P1 dopo: $P2%0A$(tail -n 6 "$FL" 2>&1 | enc)"
+echo "::notice title=finder 1 dopo il riavvio (nessun intervento)::prima: $P1 dopo: $P2%0A$(tail -n 6 "$FL" 2>&1 | enc)%0Aservizio: $(pgrep -fl 'rclone-mimus nfsmount' | enc)%0Amount: $(mount | grep -i collegata | enc)%0Alog: $(tail -n 8 "$T/mount.log" | enc)%0Arc: $(curl -s -m 3 -X POST http://127.0.0.1:5572/core/pid | enc)"
 # rimedio A: l'estensione viene chiusa (il Finder la riapre?)
 pkill -f MIMUSFinder; sleep 2; open "$M"; sleep 12
 P3="$(pgrep -f MIMUSFinder | tr '\n' ' ')"
