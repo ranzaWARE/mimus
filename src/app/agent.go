@@ -150,6 +150,13 @@ var plistTmpl = template.Must(template.New("plist").Parse(`<?xml version="1.0" e
         <string>5s</string>
         <string>--dir-cache-time</string>
         <string>{{.RefreshMin}}m</string>
+        <!-- cartelle aperte di recente: novità dei colleghi entro pochi secondi -->
+        <string>--poll-interval</string>
+        <string>15s</string>
+        <string>--option</string>
+        <string>acdirmax=5</string>
+        <string>--option</string>
+        <string>nonegnamecache</string>
         <string>--contimeout</string>
         <string>5s</string>
         <string>--log-file</string>

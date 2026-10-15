@@ -3,6 +3,17 @@
 Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
 `rclone-mimus version` (es. `v1.72.0-mimus-1.0.0`).
 
+## 1.5.1 — 2026-10-15
+
+- **Novità dei colleghi molto più veloci**: le cartelle aperte di recente (fino
+  a 32, nell'ultima ora) vengono ricontrollate sul server remoto ogni 15 secondi
+  e il Finder vede le modifiche in circa 12 secondi, prima ci volevano fino a 5
+  minuti. Misurato su un Mac vero: file nuovi, cartelle nuove, file modificati
+  e cancellati. In VPN il controllo è più leggero (ogni 45 secondi, 8 cartelle).
+- Le altre cartelle seguono l'impostazione «Novità dei colleghi visibili entro».
+- La cartella collegata non ricorda più a lungo i nomi di file inesistenti:
+  un file appena arrivato si apre subito (utile per i riferimenti esterni dei CAD).
+
 ## 1.5.0 — 2026-10-15
 
 - **Icona nella barra dei menu**: il Gallimimus di MIMUS in alto a destra,

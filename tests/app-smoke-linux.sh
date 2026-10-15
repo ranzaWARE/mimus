@@ -59,6 +59,9 @@ start(){ # esegue il ProgramArguments del plist, con mount FUSE al posto di nfsm
 import plistlib, shlex, sys
 a = plistlib.load(open(sys.argv[1], "rb"))["ProgramArguments"]
 a[1] = "mount"
+# opzioni del client NFS di macOS: non valgono per FUSE
+while "--option" in a:
+    i = a.index("--option"); del a[i:i+2]
 print(" ".join(shlex.quote(x) for x in a))
 open(sys.argv[1] + ".mnt", "w").write(a[3])
 PY
@@ -136,6 +139,7 @@ P=$HOME/Library/LaunchAgents/app.mimus.agent.plist
 ok "servizio creato" "[ -f '$P' ]"
 ok "il servizio usa il programma dentro l'app" "grep -q '$MAC/rclone-mimus' '$P'"
 ok "soglia disco 5G" "grep -q '<string>5G</string>' '$P'"
+ok "cartelle aperte controllate ogni 15s, cache NFS breve" "grep -q '<string>15s</string>' '$P' && grep -q 'acdirmax=5' '$P'"
 ok "credenziali salvate (password offuscata)" "grep -q '^\[mimus\]' $HOME/.config/rclone/rclone.conf && ! grep -q Passw0rd $HOME/.config/rclone/rclone.conf"
 ok "impostazioni salvate senza password" "[ -f '$HOME/Library/Application Support/MIMUS/settings.json' ] && ! grep -q Passw0rd '$HOME/Library/Application Support/MIMUS/settings.json'"
 ok "cartella collegata, col nome scelto" "[ -f $HOME/Lavoro/Doc/a.txt ]"

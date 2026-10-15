@@ -29,7 +29,7 @@ func newTestFs(t *testing.T) (*Fs, string, func(bool)) {
 		"walk_interval": "0",
 		"walk_max_rtt":  "15ms",
 		"watch_dirs":    "32",
-		"watch_window":  "15m",
+		"watch_window":  "1h",
 		"ui":            "none",
 		"dir":           t.TempDir(),
 	}
@@ -358,7 +358,7 @@ func TestWatchNotifiesRemoteChanges(t *testing.T) {
 		t.Fatalf("offline: notified %v", got)
 	}
 	// folders not opened for a while are no longer re-read
-	if l := f.watchList(time.Now().Add(time.Hour), 10); len(l) != 0 {
+	if l := f.watchList(time.Now().Add(2*time.Hour), 10); len(l) != 0 {
 		t.Fatalf("old folders still watched: %v", l)
 	}
 }

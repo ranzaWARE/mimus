@@ -430,7 +430,7 @@ td.icon {{ width: 64px; text-align: center; vertical-align: middle; }}
     <tr><td>Spazio minimo libero</td><td>quanti GB lasciare sempre liberi sul disco</td></tr>
     <tr><td>Aggiornamenti automatici di MIMUS</td><td>sì/no: controllo giornaliero delle nuove versioni</td></tr>
     <tr><td>Icona nella barra dei menu</td><td>sì/no: il dinosauro in alto a destra (vedi <a href="#barra">sopra</a>)</td></tr>
-    <tr><td>Novità dei colleghi visibili entro</td><td>ogni quanti minuti controllare le modifiche fatte da altri (valori bassi = più richieste al server remoto)</td></tr>
+    <tr><td>Novità dei colleghi visibili entro</td><td>ogni quanti minuti controllare le modifiche fatte da altri nelle cartelle che non stai guardando (valori bassi = più richieste al server remoto); quelle aperte di recente si aggiornano da sole in pochi secondi</td></tr>
   </table>
   <div class="note">Server, cartella condivisa e posizione dei file si possono cambiare solo quando non ci sono modifiche in attesa di essere caricate: altrimenti l’app te lo dice e salva solo le altre impostazioni.
   Se sposti i file su un altro disco, quelli già scaricati verranno riscaricati quando li riapri.</div>
@@ -456,7 +456,7 @@ td.icon {{ width: 64px; text-align: center; vertical-align: middle; }}
   <details><summary>La cartella è vuota o non si apre</summary>
     <p>App → <em>Riavvia collegamento</em>. Se non basta, guarda <em>Ultimi errori</em> e manda una foto all’IT.</p></details>
   <details><summary>Sono in ufficio ma non vedo i file nuovi dei colleghi</summary>
-    <p>App → <em>Aggiorna cartelle</em>. Normalmente compaiono da soli entro 5 minuti.</p></details>
+    <p>Nelle cartelle che stai guardando compaiono da soli entro pochi secondi (in VPN entro un minuto circa); nelle altre entro 5 minuti (modificabile nelle <a href="#impostazioni">Impostazioni</a>). Per vederli subito: <em>Aggiorna cartelle</em>, dall’icona in alto o dall’app.</p></details>
   <details><summary>Da fuori ufficio non si collega</summary>
     <p>Controlla che la VPN sia attiva. Senza VPN lavori offline con i file già sul Mac.</p></details>
   <details><summary>Un file non si apre offline</summary>

@@ -111,7 +111,7 @@ func settingsMenu(p paths, s *settings) paths {
 			_ = saveSettings(p, *s)
 			setMenuIcon(p, !s.NoMenuIcon)
 		case strings.HasPrefix(c, "Novità"):
-			s.RefreshMin = askNumber("Entro quanti minuti vedere le modifiche fatte dai colleghi?\n(Valori bassi = più richieste al server remoto.)", s.RefreshMin, 1, 120)
+			s.RefreshMin = askNumber("Entro quanti minuti vedere le modifiche fatte dai colleghi nelle cartelle che non stai guardando?\n(Le cartelle aperte di recente si aggiornano da sole in pochi secondi. Valori bassi = più richieste al server remoto.)", s.RefreshMin, 1, 120)
 		}
 	}
 }

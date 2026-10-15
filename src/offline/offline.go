@@ -83,7 +83,7 @@ func init() {
 			Help:    "Folders opened recently that are re-read in background to show at once the changes made by others\n(every --poll-interval of the mount; 0 = off).",
 		}, {
 			Name:    "watch_window",
-			Default: fs.Duration(15 * time.Minute),
+			Default: fs.Duration(time.Hour),
 			Help:    "A folder is re-read in background for this long after it was last opened.",
 		}, {
 			Name:    "min_free",
