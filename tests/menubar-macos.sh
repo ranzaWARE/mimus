@@ -18,7 +18,7 @@ LOG="$T/menu.log"; : > "$LOG"
 
 cat > "$T/rc.py" <<'PY'
 import json, sys
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 state = sys.argv[1]
 class H(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -34,10 +34,13 @@ class H(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
     def log_message(self, *a): pass
-HTTPServer(("127.0.0.1", 5572), H).serve_forever()
+ThreadingHTTPServer(("127.0.0.1", 5572), H).serve_forever()
 PY
 SRV=""
-server(){ python3 "$T/rc.py" "$T/state.json" & SRV=$!; sleep 1; }
+server(){
+    python3 "$T/rc.py" "$T/state.json" & SRV=$!
+    for _ in 1 2 3 4 5 6 7 8 9 10; do curl -sf -X POST -d '{}' http://127.0.0.1:5572/mimus/status >/dev/null && return; sleep 1; done
+}
 stop_server(){ [ -n "$SRV" ] && kill $SRV 2>/dev/null; SRV=""; }
 settings(){ printf '{"host": "%s", "mount_path": "%s"}' "$1" "$2" > "$SJ"; }
 state(){ printf '%s' "$1" > "$T/state.json"; }
