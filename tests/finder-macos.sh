@@ -55,7 +55,11 @@ case "$ST" in *'"name":"locale.txt","state":"local"'*'"name":"remoto.txt","state
 # il Finder apre la cartella: deve avviare l'estensione e mettere i pallini
 open "$M"; sleep 25
 PROC="$(pgrep -fl MIMUSFinder || true)"
-LOGS="$(log show --start "$START" --style compact --predicate 'process == "MIMUSFinder"' 2>/dev/null | grep 'MIMUS Finder' | cut -c1-220 | tail -n 15)"
+LOGS="$(log show --start "$START" --style compact --info --predicate 'subsystem == "app.mimus.finder"' 2>/dev/null | grep -v '^Timestamp' | cut -c1-220 | tail -n 10)"
+FLOG="$(tail -n 10 "$HOME/Library/Containers/app.mimus.finder/Data/tmp/mimus-finder.log" 2>&1)"
+LOGS="$LOGS
+--- file:
+$FLOG"
 DENY="$(log show --start "$START" --style compact --predicate 'eventMessage CONTAINS "MIMUSFinder" AND eventMessage CONTAINS "deny"' 2>/dev/null | grep -v 'log run' | grep -v '^Timestamp' | cut -c1-220 | tail -n 8)"
 [ -n "$DENY" ] && echo "::warning title=finder sandbox::$(echo "$DENY" | enc)"
 echo "processo: $PROC"; echo "$LOGS"

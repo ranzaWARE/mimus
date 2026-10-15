@@ -47,6 +47,9 @@ rifiuta se ci sono modifiche non ancora caricate sul server remoto.
 - **Spazio disco**: lascia sempre libera la soglia scelta e avvisa se non ci riesce.
 - **Password cambiata**: smette di riprovare (l'account non si blocca) e chiede
   la nuova password.
+- **Pallini nel Finder** (sul Mac / solo sul server / sempre sul Mac / da
+  caricare) e menu del tasto destro: *Scarica ora*, *Mantieni sempre su
+  questo Mac*, *Togli da questo Mac*.
 - **Icona nella barra dei menu**: il Gallimimus dorme (Z Z Z) quando è tutto
   sincronizzato o sei offline, corre mentre sincronizza, mostra «!» se c'è un
   problema. Stesso colore delle icone di sistema; si può togliere dalle Impostazioni.
@@ -63,6 +66,7 @@ MIMUS.app/Contents/MacOS/
   ├── MIMUS        l'app: finestre di configurazione e menu (src/app)
   └── rclone-mimus    rclone 1.72 + modulo "offline" + patch cache
 MIMUS.app/Contents/Library/LoginItems/MIMUS Menu.app   icona nella barra dei menu (src/menubar, Swift)
+MIMUS.app/Contents/PlugIns/MIMUS Finder.appex          estensione del Finder (src/finder, Swift, sandbox)
 ~/Library/LaunchAgents/app.mimus.agent.plist   avvio automatico (scritto dall'app)
 ~/Library/LaunchAgents/app.mimus.menu.plist    icona nella barra dei menu
 ~/Library/LaunchAgents/app.mimus.update.plist  controllo aggiornamenti giornaliero
@@ -79,13 +83,16 @@ Diagnostica da Terminale: `bash scripts/status.sh`.
 |---|---|
 | `src/app/` | l'app (Go, nessuna dipendenza esterna) |
 | `src/offline/` | modulo "offline" per rclone, con unit test |
-| `src/patches/vfscache.patch` | patch alla cache VFS di rclone |
+| `src/patches/` | patch a rclone: cache VFS (conflitti, pulizia sicura), date delle cartelle, stati per il Finder (`vfsmimus`), creazione esclusiva NFS |
+| `src/finder/` | estensione del Finder (Swift, sandbox): pallini e menu; usa rc `vfs/mimus-*` |
 | `src/menubar/` | icona nella barra dei menu (Swift/AppKit, solo macOS); legge lo stato da rc `mimus/status` |
 | `packaging/` | Info.plist, icona, guida (`make-guide.py` genera `Guida.html`), icone della barra (`make-menu-icons.py`) |
 | `scripts/build-rclone.sh` | scarica rclone, applica patch e modulo, lancia i test, compila |
 | `scripts/build-mac-app.sh` | app universale (Apple Silicon + Intel), firma ad-hoc, DMG; l'icona della barra si compila solo su macOS |
 | `tests/e2e-linux.sh` | test end-to-end del modulo con Samba e FUSE |
 | `tests/app-smoke-linux.sh` | test dell'app: configurazione, aggiornamento, disinstallazione |
+| `tests/finder-macos.sh` | estensione del Finder: firma con sandbox, registrazione, avvio (macOS, nella CI) |
+| `tests/refresh-macos.sh` | tempi con cui le novità dal server arrivano al Finder (macOS, nella CI) |
 | `tests/menubar-macos.sh` | prova degli stati dell'icona nella barra dei menu con un finto servizio (macOS, nella CI) |
 | `tests/update-macos.sh` | prova dell'aggiornamento automatico da un finto GitHub (macOS, nella CI) |
 | `.github/workflows/build.yml` | a ogni push compila, testa e produce il DMG; pubblica le versioni nuove |

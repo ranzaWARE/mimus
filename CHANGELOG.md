@@ -3,6 +3,26 @@
 Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
 `rclone-mimus version` (es. `v1.72.0-mimus-1.0.0`).
 
+## 1.6.0 — 2026-10-15
+
+- **Pallini nel Finder** sui file della cartella collegata:
+  - cerchio grigio: solo sul server remoto (si scarica quando lo apri);
+  - verde: su questo Mac (si apre anche offline);
+  - verde con spunta: sempre su questo Mac;
+  - arancione con freccia: da caricare sul server remoto.
+- **Menu del tasto destro** su file e cartelle:
+  - «Scarica ora su questo Mac» (le cartelle con tutto il contenuto);
+  - «Mantieni sempre su questo Mac»: mai tolto dal Mac, e nelle cartelle
+    mantenute anche i file nuovi messi dai colleghi si scaricano da soli;
+  - «Togli da questo Mac (resta sul server)» per liberare spazio, solo se
+    il file è al sicuro sul server e non ha modifiche da caricare.
+- È un'estensione del Finder dentro l'app, attivata da MIMUS. Impostazioni:
+  «Pallini e menu nel Finder» sì/no.
+- **Disinstallazione con modifiche in sospeso**: prima era rifiutata; ora,
+  scrivendo OK, si accetta di perderle e MIMUS cancella i suoi file dal Mac
+  (sul server non viene cancellato niente).
+- Guida: nuova sezione «Sul Mac o solo sul server».
+
 ## 1.5.2 — 2026-10-15
 
 - **Le finestre del Finder si aggiornano da sole**: quando cambia qualcosa sul

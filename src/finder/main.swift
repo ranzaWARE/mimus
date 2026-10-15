@@ -14,8 +14,29 @@
 // cartella collegata) e si collega solo al servizio locale.
 import Cocoa
 import FinderSync
+import os
 
 let rcBase = "http://127.0.0.1:5572/"
+let logger = Logger(subsystem: "app.mimus.finder", category: "finder")
+
+// messaggi: registro di sistema (log show --predicate 'subsystem ==
+// "app.mimus.finder"') e un file nel contenitore dell'estensione
+// (~/Library/Containers/app.mimus.finder/Data/tmp/mimus-finder.log)
+func dlog(_ msg: String) {
+    logger.notice("\(msg, privacy: .public)")
+    let url = FileManager.default.temporaryDirectory.appendingPathComponent("mimus-finder.log")
+    let line = "\(Date()) \(msg)\n"
+    if let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? NSNumber)??.intValue, size > 200_000 {
+        try? FileManager.default.removeItem(at: url)
+    }
+    if let h = try? FileHandle(forWritingTo: url) {
+        h.seekToEndOfFile()
+        h.write(line.data(using: .utf8) ?? Data())
+        h.closeFile()
+    } else {
+        try? line.data(using: .utf8)?.write(to: url)
+    }
+}
 
 // cartella Inizio vera (nella sandbox NSHomeDirectory è il contenitore)
 func realHome() -> String {
@@ -141,7 +162,7 @@ final class FinderSync: FIFinderSync {
         t.setEventHandler { [weak self] in self?.tick() }
         t.resume()
         timer = t
-        NSLog("MIMUS Finder: avviata, cartella collegata %@", root)
+        dlog("avviata, cartella collegata \(root)")
     }
 
     // su queue
@@ -150,7 +171,7 @@ final class FinderSync: FIFinderSync {
         if mp == root { return }
         root = mp
         shown.removeAll()
-        NSLog("MIMUS Finder: cartella collegata %@", mp)
+        dlog("cartella collegata \(mp)")
         let url = URL(fileURLWithPath: mp, isDirectory: true)
         DispatchQueue.main.async {
             FIFinderSyncController.default().directoryURLs = [url]
@@ -206,7 +227,7 @@ final class FinderSync: FIFinderSync {
         }
         if !changes.isEmpty {
             let summary = changes.map { "\($0.0.lastPathComponent)=\($0.1.isEmpty ? "-" : $0.1)" }.joined(separator: " ")
-            NSLog("MIMUS Finder: «%@» %@", dir.isEmpty ? "/" : dir, summary)
+            dlog("«\(dir.isEmpty ? "/" : dir)» \(summary)")
             DispatchQueue.main.async {
                 let c = FIFinderSyncController.default()
                 for (u, b) in changes { c.setBadgeIdentifier(b, for: u) }
@@ -274,7 +295,7 @@ final class FinderSync: FIFinderSync {
         queue.async {
             let r = rcCall(path, params)
             if let err = r?["error"] as? String {
-                NSLog("MIMUS Finder: %@ non riuscito: %@", path, err)
+                dlog("\(path) non riuscito: \(err)")
             }
             for s in sel { self.pending.insert((s as NSString).deletingLastPathComponent) }
         }
