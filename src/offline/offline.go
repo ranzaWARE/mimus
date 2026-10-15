@@ -163,6 +163,7 @@ type Fs struct {
 	replayWake chan struct{}
 	walkWake   chan struct{}
 	watch      watchSet
+	pins       *pinSet
 	orphans    sync.Map
 	lnOnce     sync.Once // «Rete locale» hint shown once
 	replaying  atomic.Bool
@@ -210,6 +211,7 @@ func NewFs(ctx context.Context, name, rpath string, m configmap.Mapper) (fs.Fs, 
 	f := &Fs{
 		Fs: baseFs, name: name, root: rpath, opt: opt, store: st,
 		journal:    jr,
+		pins:       newPinSet(st.path),
 		replayWake: make(chan struct{}, 1),
 		walkWake:   make(chan struct{}, 1),
 		probeWake:  make(chan struct{}, 1),
@@ -233,6 +235,8 @@ func NewFs(ctx context.Context, name, rpath string, m configmap.Mapper) (fs.Fs, 
 		}
 		f.wg.Add(1)
 		go f.replayer(bg)
+		f.wg.Add(1)
+		go f.pinKeeper(bg)
 		if opt.WalkInterval > 0 {
 			f.wg.Add(1)
 			go f.walker(bg)
@@ -442,6 +446,7 @@ func (f *Fs) Rmdir(ctx context.Context, dir string) error {
 	}
 	f.store.removeEntry(dir)
 	f.store.drop(dir)
+	f.pinsRemoved(dir)
 	return nil
 }
 
@@ -459,6 +464,7 @@ func (f *Fs) Purge(ctx context.Context, dir string) error {
 	}
 	f.store.removeEntry(dir)
 	f.store.dropTree(dir)
+	f.pinsRemoved(dir)
 	return nil
 }
 
@@ -525,6 +531,7 @@ func (f *Fs) DirMove(ctx context.Context, src fs.Fs, srcRemote, dstRemote string
 		return err
 	}
 	f.store.renameTree(srcRemote, dstRemote)
+	f.pinsRenamed(srcRemote, dstRemote)
 	return nil
 }
 

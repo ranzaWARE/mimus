@@ -41,24 +41,37 @@ python3 packaging/make-guide.py "$VERSION" >/dev/null
 cp packaging/Guida.html "$APP/Contents/Resources/"
 printf 'APPL????' > "$APP/Contents/PkgInfo"
 
-# 2b. icona nella barra dei menu: MIMUS.app/Contents/Library/LoginItems/MIMUS Menu.app
+# 2b. parti in Swift (solo su macOS): icona nella barra dei menu
+#     (Contents/Library/LoginItems/MIMUS Menu.app) ed estensione del Finder
+#     (Contents/PlugIns/MIMUS Finder.appex)
 HELPER="$APP/Contents/Library/LoginItems/MIMUS Menu.app"
-if command -v swiftc >/dev/null && command -v xcrun >/dev/null; then
-    SDK="$(xcrun --sdk macosx --show-sdk-path)"
+APPEX="$APP/Contents/PlugIns/MIMUS Finder.appex"
+swift_build() { # nome sorgente argomenti...
+    local name=$1 src=$2; shift 2
     for ARCH in arm64 x86_64; do
-        LOG="$B/swiftc-$ARCH.log"
-        if ! swiftc -O -swift-version 5 -sdk "$SDK" -target "$ARCH-apple-macos11" \
-                -o "$B/MIMUSMenu-$ARCH" src/menubar/main.swift > "$LOG" 2>&1; then
+        LOG="$B/swiftc-$name-$ARCH.log"
+        if ! swiftc -O -swift-version 5 -sdk "$SDK" -target "$ARCH-apple-macos11" "$@" \
+                -o "$B/$name-$ARCH" "$src" > "$LOG" 2>&1; then
             cat "$LOG"
             # errori come annotazioni di GitHub Actions
-            sed -nE 's#^.*(src/menubar/[^:]+):([0-9]+):([0-9]+): error: (.*)$#::error file=\1,line=\2,col=\3::\4#p' "$LOG"
+            sed -nE 's#^.*(src/[^:]+\.swift):([0-9]+):([0-9]+): error: (.*)$#::error file=\1,line=\2,col=\3::\4#p' "$LOG"
             exit 1
         fi
         cat "$LOG"
         if [ "$ARCH" = arm64 ] && [ -n "${GITHUB_ACTIONS:-}" ]; then
-            sed -nE 's#^.*(src/menubar/[^:]+):([0-9]+):([0-9]+): warning: (.*)$#::warning file=\1,line=\2,col=\3::\4#p' "$LOG"
+            sed -nE 's#^.*(src/[^:]+\.swift):([0-9]+):([0-9]+): warning: (.*)$#::warning file=\1,line=\2,col=\3::\4#p' "$LOG"
         fi
     done
+}
+if command -v swiftc >/dev/null && command -v xcrun >/dev/null; then
+    SDK="$(xcrun --sdk macosx --show-sdk-path)"
+    swift_build MIMUSMenu src/menubar/main.swift
+    swift_build MIMUSFinder src/finder/main.swift -parse-as-library -application-extension \
+        -module-name MIMUSFinder -framework FinderSync -Xlinker -e -Xlinker _NSExtensionMain
+    mkdir -p "$APPEX/Contents/MacOS" "$APPEX/Contents/Resources"
+    universal "$APPEX/Contents/MacOS/MIMUSFinder" "$B/MIMUSFinder-arm64" "$B/MIMUSFinder-x86_64"
+    chmod 755 "$APPEX/Contents/MacOS/MIMUSFinder"
+    sed "s/__VERSION__/$VERSION/g" packaging/FinderInfo.plist > "$APPEX/Contents/Info.plist"
     mkdir -p "$HELPER/Contents/MacOS" "$HELPER/Contents/Resources"
     universal "$HELPER/Contents/MacOS/MIMUSMenu" "$B/MIMUSMenu-arm64" "$B/MIMUSMenu-x86_64"
     chmod 755 "$HELPER/Contents/MacOS/MIMUSMenu"
@@ -71,16 +84,21 @@ if command -v swiftc >/dev/null && command -v xcrun >/dev/null; then
     printf 'APPL????' > "$HELPER/Contents/PkgInfo"
     "$HELPER/Contents/MacOS/MIMUSMenu" --selftest
 elif [ -n "${REQUIRE_MENU:-}" ]; then
-    echo "::error::swiftc non trovato: serve per l'icona nella barra dei menu" >&2
+    echo "::error::swiftc non trovato: serve per l'icona nella barra dei menu e l'estensione del Finder" >&2
     exit 1
 else
-    echo "attenzione: swiftc non trovato, app senza icona nella barra dei menu" >&2
+    echo "attenzione: swiftc non trovato, app senza icona nella barra dei menu né estensione del Finder" >&2
 fi
 
 # 3. firma ad-hoc (senza Developer ID Apple: al primo avvio macOS chiede conferma)
+# ogni parte firmata a sé, poi l'app senza --deep: --deep rifirmerebbe
+# l'estensione del Finder senza i suoi permessi (sandbox)
 if command -v codesign >/dev/null; then
+    codesign --force --sign - "$APP/Contents/MacOS/rclone-mimus"
     [ -d "$HELPER" ] && codesign --force --sign - "$HELPER"
-    codesign --force --deep --sign - "$APP"
+    [ -d "$APPEX" ] && codesign --force --sign - --entitlements packaging/finder.entitlements "$APPEX"
+    codesign --force --sign - "$APP"
+    codesign --verify --deep --strict "$APP"
 else
     rcodesign sign "$APP" >/dev/null
 fi

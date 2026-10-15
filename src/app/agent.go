@@ -62,12 +62,13 @@ type settings struct {
 	MinFreeGB int    `json:"min_free_gb"`
 	LogLevel  string `json:"log_level"`
 	// modificabili da Impostazioni
-	RetentionDays int    `json:"retention_days"` // file non usati tolti dal Mac dopo N giorni
-	RefreshMin    int    `json:"refresh_min"`    // novità dei colleghi visibili entro N minuti
-	MountPath     string `json:"mount_path"`     // cartella collegata nel Finder
-	CacheDir      string `json:"cache_dir"`      // dove stanno i file tenuti sul Mac e la coda offline
-	NoAutoUpdate  bool   `json:"no_auto_update"` // non controllare da solo gli aggiornamenti
-	NoMenuIcon    bool   `json:"no_menu_icon"`   // niente icona nella barra dei menu
+	RetentionDays int    `json:"retention_days"`  // file non usati tolti dal Mac dopo N giorni
+	RefreshMin    int    `json:"refresh_min"`     // novità dei colleghi visibili entro N minuti
+	MountPath     string `json:"mount_path"`      // cartella collegata nel Finder
+	CacheDir      string `json:"cache_dir"`       // dove stanno i file tenuti sul Mac e la coda offline
+	NoAutoUpdate  bool   `json:"no_auto_update"`  // non controllare da solo gli aggiornamenti
+	NoMenuIcon    bool   `json:"no_menu_icon"`    // niente icona nella barra dei menu
+	NoFinderMarks bool   `json:"no_finder_marks"` // niente pallini e menu nel Finder
 }
 
 // defaults fills the missing values

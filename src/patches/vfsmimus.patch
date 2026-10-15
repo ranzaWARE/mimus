@@ -1,0 +1,540 @@
+diff --git a/vfs/mimus.go b/vfs/mimus.go
+new file mode 100644
+index 0000000..d9bf724
+--- /dev/null
++++ b/vfs/mimus.go
+@@ -0,0 +1,312 @@
++package vfs
++
++// MIMUS: what the Finder extension needs. For the files of a folder: on
++// this computer, only on the server, waiting to be uploaded, kept always.
++// Download now, keep always on this computer, remove the local copy.
++
++import (
++	"context"
++	"errors"
++	"io"
++	"os"
++	"path"
++	"strings"
++
++	"github.com/rclone/rclone/fs"
++	"github.com/rclone/rclone/fs/rc"
++)
++
++// Pinner can be implemented by the remote: paths (files or folders) kept
++// always on this computer, never removed from the cache
++type Pinner interface {
++	// IsPinned: remote, or a folder that contains it, is kept always
++	IsPinned(remote string) bool
++	// SetPinned keeps (on) or stops keeping remote and what it contains
++	SetPinned(ctx context.Context, remote string, on bool) error
++	// PinnedPaths lists what is kept always
++	PinnedPaths() []string
++}
++
++// States of a file for the Finder
++const (
++	MimusRemote  = "remote"  // only on the server
++	MimusPartial = "partial" // partly here: not usable offline
++	MimusLocal   = "local"   // on this computer
++	MimusUpload  = "upload"  // changed here, waiting to be uploaded
++	MimusFolder  = "folder"
++)
++
++func init() {
++	rc.Add(rc.Call{
++		Path:  "vfs/mimus-states",
++		Fn:    rcMimusStates,
++		Title: "MIMUS: state of the files of a folder.",
++		Help: `Parameters: dir (relative to the root, "" = root), fs (optional).
++
++Returns entries: [{name, state, pinned}] with state one of remote (only
++on the server), partial, local (on this computer), upload (waiting to be
++uploaded), folder; pinned = kept always on this computer.
++`,
++	})
++	rc.Add(rc.Call{
++		Path:  "vfs/mimus-download",
++		Fn:    rcMimusDownload,
++		Title: "MIMUS: download files and folders to this computer.",
++		Help: `Parameters: paths (list) or path, pin (true = keep them always on this
++computer), fs (optional). Folders are downloaded with everything inside.
++Use _async=true for big folders.
++
++Returns downloaded (files), failed (list) and missing (paths that do not
++exist).
++`,
++	})
++	rc.Add(rc.Call{
++		Path:  "vfs/mimus-pin",
++		Fn:    rcMimusPin,
++		Title: "MIMUS: keep (or stop keeping) files and folders always on this computer.",
++		Help: `Parameters: paths (list) or path, on (true/false), fs (optional).
++What is kept is downloaded in background by the remote and never removed
++from the cache. Stopping does not remove the local copy.
++`,
++	})
++	rc.Add(rc.Call{
++		Path:  "vfs/mimus-evict",
++		Fn:    rcMimusEvict,
++		Title: "MIMUS: remove the local copy of files and folders.",
++		Help: `Parameters: paths (list) or path, fs (optional). They stop being kept
++always. A copy is removed only if it has no changes still to upload, is not
++in use and the file is safe on the server.
++
++Returns removed (files) and kept (list of the copies left here).
++`,
++	})
++}
++
++func mimusPaths(in rc.Params) ([]string, error) {
++	var paths []string
++	if err := in.GetStruct("paths", &paths); err != nil {
++		if !rc.IsErrParamNotFound(err) {
++			return nil, err
++		}
++		p, err := in.GetString("path")
++		if err != nil {
++			return nil, err
++		}
++		paths = []string{p}
++	}
++	for i := range paths {
++		paths[i] = strings.Trim(paths[i], "/")
++	}
++	return paths, nil
++}
++
++func (vfs *VFS) pinner() Pinner {
++	p, _ := vfs.f.(Pinner)
++	return p
++}
++
++// mimusState returns the state of the file at path
++func (vfs *VFS) mimusState(path string) string {
++	if vfs.cache == nil {
++		return MimusRemote
++	}
++	st := vfs.cache.State(path)
++	switch {
++	case st.Dirty:
++		return MimusUpload
++	case st.Complete:
++		return MimusLocal
++	case st.Cached:
++		return MimusPartial
++	}
++	return MimusRemote
++}
++
++type mimusEntry struct {
++	Name   string `json:"name"`
++	State  string `json:"state"`
++	Pinned bool   `json:"pinned"`
++}
++
++func rcMimusStates(ctx context.Context, in rc.Params) (rc.Params, error) {
++	vfs, err := getVFS(in)
++	if err != nil {
++		return nil, err
++	}
++	dir, _ := in.GetString("dir")
++	dir = strings.Trim(dir, "/")
++	node, err := vfs.Stat(dir)
++	if err != nil {
++		return nil, err
++	}
++	d, ok := node.(*Dir)
++	if !ok {
++		return nil, errors.New("not a folder")
++	}
++	nodes, err := d.ReadDirAll()
++	if err != nil {
++		return nil, err
++	}
++	p := vfs.pinner()
++	entries := make([]mimusEntry, 0, len(nodes))
++	for _, n := range nodes {
++		rel := path.Join(dir, n.Name())
++		e := mimusEntry{Name: n.Name(), State: MimusFolder}
++		if !n.IsDir() {
++			e.State = vfs.mimusState(rel)
++		}
++		if p != nil {
++			e.Pinned = p.IsPinned(rel)
++		}
++		entries = append(entries, e)
++	}
++	return rc.Params{
++		"dir":     dir,
++		"pinned":  p != nil && p.IsPinned(dir),
++		"entries": entries,
++	}, nil
++}
++
++func rcMimusDownload(ctx context.Context, in rc.Params) (rc.Params, error) {
++	vfs, err := getVFS(in)
++	if err != nil {
++		return nil, err
++	}
++	paths, err := mimusPaths(in)
++	if err != nil {
++		return nil, err
++	}
++	if pin, _ := in.GetBool("pin"); pin {
++		p := vfs.pinner()
++		if p == nil {
++			return nil, errors.New("keeping files always is not supported by this remote")
++		}
++		for _, pth := range paths {
++			if err := p.SetPinned(ctx, pth, true); err != nil {
++				return nil, err
++			}
++		}
++	}
++	n, failed, missing := 0, []string{}, []string{}
++	for _, pth := range paths {
++		if _, err := vfs.Stat(pth); errors.Is(err, ENOENT) {
++			missing = append(missing, pth)
++			continue
++		}
++		vfs.mimusDownload(ctx, pth, &n, &failed)
++	}
++	if n > 0 || len(failed) > 0 {
++		fs.Infof(nil, "MIMUS: scaricati %d file, %d non riusciti", n, len(failed))
++	}
++	return rc.Params{"downloaded": n, "failed": failed, "missing": missing}, nil
++}
++
++// mimusDownload makes the whole file (or every file of the folder) present
++// in the cache, reading it through the VFS
++func (vfs *VFS) mimusDownload(ctx context.Context, pth string, n *int, failed *[]string) {
++	if ctx.Err() != nil {
++		return
++	}
++	node, err := vfs.Stat(pth)
++	if err != nil {
++		*failed = append(*failed, pth+": "+err.Error())
++		return
++	}
++	if d, ok := node.(*Dir); ok {
++		nodes, err := d.ReadDirAll()
++		if err != nil {
++			*failed = append(*failed, pth+": "+err.Error())
++			return
++		}
++		for _, c := range nodes {
++			vfs.mimusDownload(ctx, path.Join(pth, c.Name()), n, failed)
++		}
++		return
++	}
++	if vfs.cache == nil {
++		return
++	}
++	if st := vfs.cache.State(pth); st.Complete || st.Dirty {
++		return // already here
++	}
++	h, err := vfs.OpenFile(pth, os.O_RDONLY, 0)
++	if err == nil {
++		_, err = io.Copy(io.Discard, h)
++		if cerr := h.Close(); err == nil {
++			err = cerr
++		}
++	}
++	if err != nil {
++		fs.Errorf(pth, "MIMUS: download non riuscito: %v", err)
++		*failed = append(*failed, pth+": "+err.Error())
++		return
++	}
++	*n++
++}
++
++func rcMimusEvict(ctx context.Context, in rc.Params) (rc.Params, error) {
++	vfs, err := getVFS(in)
++	if err != nil {
++		return nil, err
++	}
++	paths, err := mimusPaths(in)
++	if err != nil {
++		return nil, err
++	}
++	p := vfs.pinner()
++	if p != nil {
++		for _, pth := range paths {
++			if err := p.SetPinned(ctx, pth, false); err != nil {
++				return nil, err
++			}
++		}
++	}
++	removed, kept := 0, []string{}
++	if vfs.cache != nil {
++		for _, pth := range paths {
++			for _, name := range vfs.cache.Names(pth) {
++				if p != nil && p.IsPinned(name) {
++					kept = append(kept, name)
++					continue
++				}
++				if !vfs.cache.State(name).Cached {
++					continue
++				}
++				if vfs.cache.Evict(ctx, name) {
++					removed++
++				} else {
++					kept = append(kept, name)
++				}
++			}
++		}
++	}
++	if removed > 0 || len(kept) > 0 {
++		fs.Infof(nil, "MIMUS: tolti dal Mac %d file, %d tenuti", removed, len(kept))
++	}
++	return rc.Params{"removed": removed, "kept": kept}, nil
++}
++
++func rcMimusPin(ctx context.Context, in rc.Params) (rc.Params, error) {
++	vfs, err := getVFS(in)
++	if err != nil {
++		return nil, err
++	}
++	paths, err := mimusPaths(in)
++	if err != nil {
++		return nil, err
++	}
++	on, err := in.GetBool("on")
++	if err != nil {
++		return nil, err
++	}
++	p := vfs.pinner()
++	if p == nil {
++		return nil, errors.New("keeping files always is not supported by this remote")
++	}
++	for _, pth := range paths {
++		if err := p.SetPinned(ctx, pth, on); err != nil {
++			return nil, err
++		}
++	}
++	return rc.Params{"pinned": p.PinnedPaths()}, nil
++}
+diff --git a/vfs/mimus_test.go b/vfs/mimus_test.go
+new file mode 100644
+index 0000000..2c5ddba
+--- /dev/null
++++ b/vfs/mimus_test.go
+@@ -0,0 +1,132 @@
++package vfs
++
++import (
++	"context"
++	"os"
++	"sync"
++	"testing"
++
++	"github.com/rclone/rclone/fs"
++	"github.com/rclone/rclone/fs/rc"
++	"github.com/rclone/rclone/fstest"
++	"github.com/rclone/rclone/vfs/vfscommon"
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++// pinFs adds Pinner to the test remote
++type pinFs struct {
++	fs.Fs
++	mu   sync.Mutex
++	pins map[string]bool
++}
++
++func (f *pinFs) IsPinned(remote string) bool {
++	f.mu.Lock()
++	defer f.mu.Unlock()
++	for p := range f.pins {
++		if p == "" || remote == p || len(remote) > len(p) && remote[:len(p)+1] == p+"/" {
++			return true
++		}
++	}
++	return false
++}
++
++func (f *pinFs) SetPinned(ctx context.Context, remote string, on bool) error {
++	f.mu.Lock()
++	defer f.mu.Unlock()
++	if on {
++		f.pins[remote] = true
++	} else {
++		delete(f.pins, remote)
++	}
++	return nil
++}
++
++func (f *pinFs) PinnedPaths() []string { return nil }
++
++func mimusStates(t *testing.T, dir string) map[string]mimusEntry {
++	out, err := rc.Calls.Get("vfs/mimus-states").Fn(context.Background(), rc.Params{"dir": dir})
++	require.NoError(t, err)
++	m := map[string]mimusEntry{}
++	for _, e := range out["entries"].([]mimusEntry) {
++		m[e.Name] = e
++	}
++	return m
++}
++
++func TestMimusStatesDownloadEvict(t *testing.T) {
++	ctx := context.Background()
++	opt := vfscommon.Opt
++	opt.CacheMode = vfscommon.CacheModeFull
++	r, vfs := newTestVFSOpt(t, &opt)
++	r.WriteObject(ctx, "dir/a.txt", "contenuto a", t1)
++	r.WriteObject(ctx, "dir/sub/b.txt", "contenuto b", t1)
++	r.WriteObject(ctx, "c.txt", "contenuto c", t1)
++
++	st := mimusStates(t, "")
++	assert.Equal(t, MimusFolder, st["dir"].State)
++	assert.Equal(t, MimusRemote, st["c.txt"].State)
++
++	// download a folder: everything inside
++	out, err := rc.Calls.Get("vfs/mimus-download").Fn(ctx, rc.Params{"paths": []string{"dir"}})
++	require.NoError(t, err)
++	assert.Equal(t, 2, out["downloaded"])
++	assert.Equal(t, MimusLocal, mimusStates(t, "dir")["a.txt"].State)
++	assert.Equal(t, MimusLocal, mimusStates(t, "dir/sub")["b.txt"].State)
++	assert.Equal(t, MimusRemote, mimusStates(t, "")["c.txt"].State)
++
++	// again: nothing to do; a path that does not exist is reported
++	out, err = rc.Calls.Get("vfs/mimus-download").Fn(ctx, rc.Params{"paths": []string{"dir", "manca.txt"}})
++	require.NoError(t, err)
++	assert.Equal(t, 0, out["downloaded"])
++	assert.Equal(t, []string{"manca.txt"}, out["missing"])
++
++	// a file being changed here is not removed
++	fh, err := vfs.OpenFile("dir/a.txt", os.O_WRONLY, 0)
++	require.NoError(t, err)
++	_, err = fh.WriteAt([]byte("modificato"), 0)
++	require.NoError(t, err)
++	out, err = rc.Calls.Get("vfs/mimus-evict").Fn(ctx, rc.Params{"path": "dir"})
++	require.NoError(t, err)
++	assert.Equal(t, 1, out["removed"])
++	assert.Equal(t, []string{"dir/a.txt"}, out["kept"])
++	assert.Equal(t, MimusRemote, mimusStates(t, "dir/sub")["b.txt"].State)
++	assert.Equal(t, MimusUpload, mimusStates(t, "dir")["a.txt"].State)
++	require.NoError(t, fh.Close())
++}
++
++func TestMimusPinned(t *testing.T) {
++	ctx := context.Background()
++	opt := vfscommon.Opt
++	opt.CacheMode = vfscommon.CacheModeFull
++	r := fstest.NewRun(t)
++	pf := &pinFs{Fs: r.Fremote, pins: map[string]bool{}}
++	vfs := New(pf, &opt)
++	t.Cleanup(func() { cleanupVFS(t, vfs) })
++	r.WriteObject(ctx, "dir/a.txt", "contenuto a", t1)
++
++	in := rc.Params{"fs": fs.ConfigString(pf), "paths": []string{"dir"}, "pin": true}
++	_, err := rc.Calls.Get("vfs/mimus-download").Fn(ctx, in)
++	require.NoError(t, err)
++	assert.True(t, pf.IsPinned("dir/a.txt"))
++	got, err := rc.Calls.Get("vfs/mimus-states").Fn(ctx, rc.Params{"fs": fs.ConfigString(pf), "dir": "dir"})
++	require.NoError(t, err)
++	e := got["entries"].([]mimusEntry)[0]
++	assert.Equal(t, mimusEntry{Name: "a.txt", State: MimusLocal, Pinned: true}, e)
++
++	// stop keeping without removing, then keep again
++	_, err = rc.Calls.Get("vfs/mimus-pin").Fn(ctx, rc.Params{"fs": fs.ConfigString(pf), "path": "dir", "on": false})
++	require.NoError(t, err)
++	assert.False(t, pf.IsPinned("dir/a.txt"))
++	assert.Equal(t, MimusLocal, vfs.mimusState("dir/a.txt"))
++	_, err = rc.Calls.Get("vfs/mimus-pin").Fn(ctx, rc.Params{"fs": fs.ConfigString(pf), "path": "dir", "on": true})
++	require.NoError(t, err)
++	assert.True(t, pf.IsPinned("dir/a.txt"))
++
++	// removing the local copy stops keeping it
++	_, err = rc.Calls.Get("vfs/mimus-evict").Fn(ctx, rc.Params{"fs": fs.ConfigString(pf), "path": "dir"})
++	require.NoError(t, err)
++	assert.False(t, pf.IsPinned("dir/a.txt"))
++	assert.Equal(t, MimusRemote, vfs.mimusState("dir/a.txt"))
++}
+diff --git a/vfs/vfscache/mimus.go b/vfs/vfscache/mimus.go
+new file mode 100644
+index 0000000..1a6c2a9
+--- /dev/null
++++ b/vfs/vfscache/mimus.go
+@@ -0,0 +1,78 @@
++package vfscache
++
++// MIMUS: state of a file in the cache (for the Finder: on this Mac, only on
++// the server, waiting to be uploaded) and removal of the local copy on
++// request.
++
++import (
++	"context"
++	"sort"
++	"strings"
++)
++
++// ItemState describes a file in the cache
++type ItemState struct {
++	Cached   bool // part or all of the file is on this computer
++	Complete bool // the whole file is on this computer
++	Dirty    bool // changed here, not yet uploaded
++	Open     bool // in use
++}
++
++// State returns the cache state of the file name
++func (c *Cache) State(name string) (st ItemState) {
++	item, found := c.get(name)
++	if !found {
++		return st
++	}
++	item.mu.Lock()
++	defer item.mu.Unlock()
++	st.Cached = item._exists()
++	st.Complete = st.Cached && item._present()
++	st.Dirty = item.info.Dirty
++	st.Open = item.opens != 0
++	return st
++}
++
++// Names returns the files in the cache inside the folder dir ("" = all),
++// sorted
++func (c *Cache) Names(dir string) []string {
++	dir = clean(dir)
++	prefix := dir + "/"
++	c.mu.Lock()
++	var out []string
++	for name := range c.item {
++		if dir == "" || dir == "." || name == dir || strings.HasPrefix(name, prefix) {
++			out = append(out, name)
++		}
++	}
++	c.mu.Unlock()
++	sort.Strings(out)
++	return out
++}
++
++// Evict removes the local copy of the file name, but only if it is not
++// open, has no changes still to upload and the remote allows it (the
++// EvictionChecker checks that the file is safe on the server). Returns true
++// if the copy has been removed (or there was none).
++func (c *Cache) Evict(ctx context.Context, name string) bool {
++	name = clean(name)
++	st := c.State(name)
++	if !st.Cached {
++		return true // nothing on this computer
++	}
++	if st.Dirty || st.Open {
++		return false
++	}
++	if checker, ok := c.fremote.(EvictionChecker); ok && !checker.CacheEvictionAllowed(ctx, name) {
++		return false
++	}
++	c.mu.Lock()
++	defer c.mu.Unlock()
++	item, ok := c.item[name]
++	if !ok {
++		return true
++	}
++	c.removeNotInUse(item, 0, false) // re-checks opens and changes
++	_, still := c.item[name]
++	return !still
++}

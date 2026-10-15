@@ -41,7 +41,7 @@ GO
 
 echo "Test del modulo offline e della cache..."
 go test -count=1 ./backend/offline/ ./vfs/vfscache/
-go test -count=1 -run 'TestDir' ./vfs/
+go test -count=1 -run 'TestDir|TestMimus' ./vfs/
 
 LDFLAGS="-s -w -X github.com/rclone/rclone/fs.Version=$RCLONE_VER-mimus-$APP_VER"
 mkdir -p "$ROOT/build"

@@ -387,3 +387,47 @@ func TestChangeNotifyTicks(t *testing.T) {
 	}
 	close(intervals)
 }
+
+func TestPins(t *testing.T) {
+	ctx := context.Background()
+	f, base, _ := newTestFs(t)
+	must(t, os.MkdirAll(filepath.Join(base, "Commesse/C1"), 0o755))
+	must(t, os.WriteFile(filepath.Join(base, "Commesse/C1/a.dwg"), []byte("x"), 0o644))
+
+	must(t, f.SetPinned(ctx, "/Commesse/C1/", true))
+	if !f.IsPinned("Commesse/C1/a.dwg") || !f.IsPinned("Commesse/C1") || f.IsPinned("Commesse") {
+		t.Fatalf("pins = %v", f.PinnedPaths())
+	}
+	// a file inside a kept folder cannot be released alone
+	if err := f.SetPinned(ctx, "Commesse/C1/a.dwg", false); err == nil || !strings.Contains(err.Error(), "Commesse/C1") {
+		t.Fatalf("release inside kept folder: %v", err)
+	}
+	// kept files are never removed from the cache
+	if f.CacheEvictionAllowed(ctx, "Commesse/C1/a.dwg") {
+		t.Fatal("kept file removed from the cache")
+	}
+	// keeping the parent replaces the child
+	must(t, f.SetPinned(ctx, "Commesse", true))
+	if got := strings.Join(f.PinnedPaths(), ","); got != "Commesse" {
+		t.Fatalf("pins = %q", got)
+	}
+	// saved on disk
+	if p := newPinSet(f.store.path); strings.Join(p.list, ",") != "Commesse" {
+		t.Fatalf("saved pins = %v", p.list)
+	}
+	// folder renamed and deleted from the Mac
+	must(t, f.DirMove(ctx, f, "Commesse", "Lavori"))
+	if got := strings.Join(f.PinnedPaths(), ","); got != "Lavori" {
+		t.Fatalf("after rename pins = %q", got)
+	}
+	must(t, f.SetPinned(ctx, "Lavori", false))
+	if len(f.PinnedPaths()) != 0 || f.IsPinned("Lavori/C1/a.dwg") {
+		t.Fatalf("after release pins = %v", f.PinnedPaths())
+	}
+	must(t, f.SetPinned(ctx, "Lavori/C1", true))
+	must(t, os.Remove(filepath.Join(base, "Lavori/C1/a.dwg")))
+	must(t, f.Rmdir(ctx, "Lavori/C1"))
+	if len(f.PinnedPaths()) != 0 {
+		t.Fatalf("deleted folder still kept: %v", f.PinnedPaths())
+	}
+}

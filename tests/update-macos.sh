@@ -21,7 +21,7 @@ make_old(){
     rm -rf "$T/Apps/MIMUS.app"
     ditto "$ROOT/build/MIMUS.app" "$T/Apps/MIMUS.app"
     cp "$T/MIMUS-old" "$T/Apps/MIMUS.app/Contents/MacOS/MIMUS"
-    codesign --force --deep --sign - "$T/Apps/MIMUS.app" >/dev/null 2>&1
+    codesign --force --sign - "$T/Apps/MIMUS.app" >/dev/null 2>&1
 }
 
 # finto GitHub
@@ -58,6 +58,7 @@ echo "::notice title=output::$(tail -c 400 "$T/run1.log" | tr '\n' ' ')"
 ok "proposta mostrata" "grep -q 'È disponibile MIMUS $VERSION' '$T/ui.log'"
 ok "app aggiornata alla $VERSION" "[ \"\$('$T/Apps/MIMUS.app/Contents/MacOS/MIMUS' --version)\" = '$VERSION' ]"
 ok "firma valida" "codesign --verify --deep --strict '$T/Apps/MIMUS.app'"
+ok "estensione del Finder inclusa, con la sandbox" "codesign -d --entitlements - '$T/Apps/MIMUS.app/Contents/PlugIns/MIMUS Finder.appex' 2>/dev/null | grep -q app-sandbox"
 ok "icona nella barra dei menu inclusa" "[ -x '$T/Apps/MIMUS.app/Contents/Library/LoginItems/MIMUS Menu.app/Contents/MacOS/MIMUSMenu' ]"
 ok "nessuna quarantena" "! xattr -r '$T/Apps/MIMUS.app' | grep -q quarantine"
 ok "nessun residuo" "[ ! -e '$T/Apps/.MIMUS-new.app' ] && [ ! -e '$T/Apps/.MIMUS-old.app' ]"

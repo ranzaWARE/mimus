@@ -21,6 +21,8 @@ cp "$RCL" "$MAC/rclone-mimus"
 # finta icona nella barra dei menu (quella vera è in Swift, solo su macOS)
 H="$APP/Contents/Library/LoginItems/MIMUS Menu.app/Contents/MacOS"; mkdir -p "$H"
 printf '#!/bin/bash\n' > "$H/MIMUSMenu"; chmod +x "$H/MIMUSMenu"
+# finta estensione del Finder
+mkdir -p "$APP/Contents/PlugIns/MIMUS Finder.appex/Contents/MacOS"
 
 # --- Samba ---
 cat > $T/smb.conf <<EOF
@@ -97,7 +99,7 @@ cat > $T/stubs/mount <<'EOF'
 /bin/mount | sed -E 's/ type ([^ ]+) \(/ (\1, /'
 EOF
 printf '#!/bin/bash\nfusermount -uz "${@: -1}"\n' > $T/stubs/umount
-for c in defaults open diskutil xattr; do printf '#!/bin/bash\necho "%s $*" >> %s/cmds.log\n' $c $T > $T/stubs/$c; done
+for c in defaults open diskutil xattr pluginkit; do printf '#!/bin/bash\necho "%s $*" >> %s/cmds.log\n' $c $T > $T/stubs/$c; done
 chmod +x $T/stubs/*
 
 # --- risposte dell'utente ---
@@ -151,6 +153,7 @@ ok "controllo aggiornamenti giornaliero attivo" "grep -q -- '--check-update' '$U
 ok "nessuna proposta di aggiornamento (già aggiornata)" "! grep -q 'disponibile' $T/ui.log"
 M=$HOME/Library/LaunchAgents/app.mimus.menu.plist
 ok "icona nella barra dei menu attiva" "grep -q 'LoginItems/MIMUS Menu.app/Contents/MacOS/MIMUSMenu' '$M' && [ -f $HOME/.fake-launchd/menu ]"
+ok "estensione del Finder registrata e attiva" "grep -q 'pluginkit -a .*MIMUS Finder.appex' $T/cmds.log && grep -q 'pluginkit -e use -i app.mimus.finder' $T/cmds.log"
 ok "icona senza quarantena" "grep -q 'xattr -dr com.apple.quarantine $APP/Contents/Library/LoginItems/MIMUS Menu.app\$' $T/cmds.log"
 
 echo "== riapertura con versione nuova: servizio aggiornato e riavviato"
@@ -224,16 +227,37 @@ printf 'Impostazioni\n~Icona nella barra\n\n\n' > $T/choices
 timeout 60 "$MAC/MIMUS"
 ok "icona rimessa" "[ -f '$M' ] && [ -f $HOME/.fake-launchd/menu ] && grep -q '\"no_menu_icon\": false' '$SJ'"
 
-echo "== disinstallazione"
+echo "== pallini e menu nel Finder: spenti dalle Impostazioni"
+printf 'Impostazioni\n~Pallini e menu\n\n\n' > $T/choices
+timeout 60 "$MAC/MIMUS"
+ok "estensione del Finder spenta" "tail -n 3 $T/cmds.log | grep -q 'pluginkit -e ignore -i app.mimus.finder' && grep -q '\"no_finder_marks\": true' '$SJ'"
+printf 'Impostazioni\n~Pallini e menu\n\n\n' > $T/choices
+timeout 60 "$MAC/MIMUS"
+ok "estensione del Finder riaccesa" "tail -n 3 $T/cmds.log | grep -q 'pluginkit -e use -i app.mimus.finder'"
+
+echo "== disinstallazione con modifiche non ancora caricate"
+pkill -f "smbd -s $T/smb.conf"; sleep 8           # server remoto spento: si lavora offline
+mkdir "$HOME/Server/Fatta offline"; sleep 1
+J="$HOME/Dati/MIMUS cache/offline"
+ok "modifica offline in coda" "grep -rqs 'Fatta offline' '$J'"
+sed -i '1i scrivi OK|annulla' $T/inputs
 printf 'Disinstalla\n' > $T/choices
 timeout 60 "$MAC/MIMUS"
+ok "senza OK non disinstalla" "[ -f '$P' ] && grep -q 'Disinstallazione annullata' $T/ui.log && grep -rqs 'Fatta offline' '$J'"
+sed -i '1s/.*/scrivi OK|ok/' $T/inputs
+printf 'Disinstalla\n' > $T/choices
+timeout 60 "$MAC/MIMUS"
+ok "chiesto di scrivere OK" "grep -q 'modifiche non ancora caricate sul server remoto: disinstallando' $T/ui.log"
+ok "con OK disinstalla" "grep -q 'Ora trascina' $T/ui.log"
 ok "servizio rimosso" "[ ! -f '$P' ]"
 ok "icona nella barra dei menu tolta" "[ ! -f '$M' ] && [ ! -f $HOME/.fake-launchd/menu ]"
+ok "estensione del Finder tolta" "grep -q 'pluginkit -r .*MIMUS Finder.appex' $T/cmds.log"
 ok "collegamento fermato" "! mount | grep -q ' on $HOME/Server '"
-ok "file spostati cancellati" "[ ! -d '$HOME/Dati/MIMUS cache' ]"
+ok "file e modifiche in coda cancellati" "[ ! -d '$HOME/Dati/MIMUS cache' ]"
+ok "cartella collegata tolta" "[ ! -e '$HOME/Server' ]"
 ok "cache e impostazioni cancellate" "[ ! -d '$HOME/Library/Application Support/MIMUS' ]"
 ok "credenziali cancellate" "! grep -qE '^\[(mimus|remoto)\]' $HOME/.config/rclone/rclone.conf 2>/dev/null"
 
-pkill -f "smbd -s $T/smb.conf"; kill $WWW 2>/dev/null
+kill $WWW 2>/dev/null
 echo; [ $FAILS -eq 0 ] && echo "TUTTI I TEST OK" || { echo "$FAILS TEST FALLITI"; echo "dialoghi:"; cat $T/ui.log; }
 exit $FAILS

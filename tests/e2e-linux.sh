@@ -128,6 +128,26 @@ C=$T/cache/vfs/mimus/Q
 cat $M/Q/a.txt $M/Q/b.txt >/dev/null; rm $S/Q/b.txt; sleep 12
 ok "tolto il file al sicuro sul server" "[ ! -f $C/a.txt ]"
 ok "tenuto il file non più sul server" "[ -f $C/b.txt ]"
+
+echo "== 6c. sul Mac / solo sul server: scarica, mantieni sempre, togli dal Mac"
+rcj(){ curl -s -X POST -H 'Content-Type: application/json' -d "$2" "http://127.0.0.1:5573/$1"; }
+states(){ rcj vfs/mimus-states "{\"dir\": \"$1\"}" | python3 -c 'import json,sys; print(" ".join(e["name"]+"="+e["state"]+("+" if e["pinned"] else "") for e in json.load(sys.stdin)["entries"]))'; }
+mkdir -p $S/P/sub; echo p1 > $S/P/p1.txt; echo p2 > $S/P/sub/p2.txt; echo r > $S/P/r.txt; sleep 11
+CP=$T/cache/vfs/mimus/P
+ok "file solo sul server" "states P | grep -Eq 'p1.txt=remote( |$)'"
+rcj vfs/mimus-download '{"paths": ["P/sub", "P/p1.txt"], "pin": true}' >/dev/null
+ok "scaricati e mantenuti" "[ -f $CP/p1.txt ] && [ -f $CP/sub/p2.txt ] && states P | grep -q 'p1.txt=local+' && states P/sub | grep -q 'p2.txt=local+'"
+ok "cartella mantenuta" "states P | grep -q 'sub=folder+'"
+ok "scarica ora (non mantenuto)" "rcj vfs/mimus-download '{\"path\": \"P/r.txt\"}' | grep -q '\"downloaded\": 1'"
+sleep 12   # pulizia con disco "pieno": toglie solo quello non mantenuto
+ok "i mantenuti restano sul Mac" "[ -f $CP/p1.txt ] && [ -f $CP/sub/p2.txt ]"
+ok "il non mantenuto tolto" "[ ! -f $CP/r.txt ]"
+echo p3 > $S/P/sub/p3.txt; sleep 11; srv_off; sleep 6; srv_on; sleep 15
+ok "file nuovo del collega in cartella mantenuta: scaricato da solo" "[ -f $CP/sub/p3.txt ]"
+ok "dentro una cartella mantenuta non si toglie da solo" "rcj vfs/mimus-evict '{\"path\": \"P/sub/p2.txt\"}' | grep -q 'P/sub'"
+rcj vfs/mimus-evict '{"paths": ["P/sub", "P/p1.txt"]}' >/dev/null
+ok "tolti dal Mac e non più mantenuti" "[ ! -f $CP/p1.txt ] && [ ! -f $CP/sub/p2.txt ] && states P | grep -Eq 'p1.txt=remote( |$)' && states P | grep -Eq 'sub=folder( |$)'"
+ok "sempre sul server" "[ -f $S/P/p1.txt ] && [ -f $S/P/sub/p2.txt ]"
 stopm; EXTRA=""; startm
 
 echo "== 6b. sottocartella: avvio senza server"

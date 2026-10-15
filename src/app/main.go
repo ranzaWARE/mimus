@@ -65,6 +65,7 @@ func main() {
 	}
 	setUpdater(p, !s.NoAutoUpdate)
 	setMenuIcon(p, !s.NoMenuIcon)
+	setFinderBadges(p, !s.NoFinderMarks)
 	if !offer && !s.NoAutoUpdate {
 		if r, ok := availableUpdate(5 * time.Second); ok && offerUpdate(p, r) {
 			return // the new version has been started
@@ -525,20 +526,28 @@ func toggleDebug(p paths, s *settings) {
 	reportMount(p)
 }
 
-// uninstall stops and removes the service; returns true if done
+// uninstall stops and removes the service; returns true if done. With
+// changes not yet on the remote it goes on only if the user writes OK,
+// accepting to lose them: then everything on the Mac is deleted.
 func uninstall(p paths) bool {
+	force := false
 	if n := pendingChanges(p); n > 0 {
-		info(fmt.Sprintf("Ci sono %d modifiche non ancora caricate sul server remoto.\nCollegati al server remoto, aspetta che finiscano e riprova: altrimenti andrebbero perse.", n))
-		return false
-	}
-	if dialog("Disinstallare MIMUS?\nIl collegamento viene fermato e tolto dall'avvio automatico.", "Annulla", "Annulla", "Disinstalla") != "Disinstalla" {
+		msg := fmt.Sprintf("Ci sono %d modifiche non ancora caricate sul server remoto: disinstallando adesso andrebbero PERSE.\n\nMeglio: collegati al server remoto, aspetta che finiscano e riprova.\n\nPer disinstallare lo stesso, perdendo quelle modifiche e cancellando i file di MIMUS su questo Mac, scrivi OK qui sotto.", n)
+		v, ok := input(msg, "", false)
+		if !ok || !strings.EqualFold(strings.TrimSpace(v), "OK") {
+			info("Disinstallazione annullata: le modifiche restano in attesa e verranno caricate quando torni collegato al server remoto.")
+			return false
+		}
+		force = true
+	} else if dialog("Disinstallare MIMUS?\nIl collegamento viene fermato e tolto dall'avvio automatico.", "Annulla", "Annulla", "Disinstalla") != "Disinstalla" {
 		return false
 	}
 	stopAgent(p)
 	_ = os.Remove(p.plist)
 	setUpdater(p, false)
 	setMenuIcon(p, false)
-	if dialog("Cancellare anche i file remoti tenuti sul Mac, la configurazione e la password salvata?", "Tieni", "Tieni", "Cancella tutto") == "Cancella tutto" {
+	removeFinderExtension(p)
+	if force || dialog("Cancellare anche i file remoti tenuti sul Mac, la configurazione e la password salvata?", "Tieni", "Tieni", "Cancella tutto") == "Cancella tutto" {
 		_ = os.RemoveAll(p.cache) // anche se spostata fuori da Application Support
 		_ = os.RemoveAll(p.appSupport)
 		_, _ = run(p.rclone, "config", "delete", "mimus")

@@ -102,6 +102,9 @@ func (f *Fs) ResolveUploadConflict(ctx context.Context, name, baseFingerprint st
 // for vfs-cache-max-age, or disk below the free space threshold): allowed
 // only if the remote is reachable and still holds the file.
 func (f *Fs) CacheEvictionAllowed(ctx context.Context, remote string) bool {
+	if f.IsPinned(remote) {
+		return false // «Mantieni sempre su questo Mac»
+	}
 	if !f.isOnline() || f.journal.touchesPath(remote) {
 		return false
 	}

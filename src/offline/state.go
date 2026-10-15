@@ -114,6 +114,7 @@ func (f *Fs) reconnected() {
 	}
 	f.wakeReplay()
 	f.wakeWalker()
+	f.wakePins()
 	f.stateMu.Lock()
 	hook := f.reconnect
 	f.stateMu.Unlock()

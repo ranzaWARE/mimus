@@ -36,6 +36,9 @@ func settingsMenu(p paths, s *settings) paths {
 		if hasMenuHelper(p) {
 			items = append(items, "Icona nella barra dei menu: "+yesNo(!s.NoMenuIcon))
 		}
+		if hasFinderExtension(p) {
+			items = append(items, "Pallini e menu nel Finder (sul Mac / solo sul server): "+yesNo(!s.NoFinderMarks))
+		}
 		c := choose("Impostazioni: scegli cosa cambiare.\nLe modifiche vengono applicate quando premi «Fine».", items, "Modifica", "Fine")
 		switch {
 		case c == "":
@@ -110,6 +113,11 @@ func settingsMenu(p paths, s *settings) paths {
 			orig.NoMenuIcon = s.NoMenuIcon
 			_ = saveSettings(p, *s)
 			setMenuIcon(p, !s.NoMenuIcon)
+		case strings.HasPrefix(c, "Pallini e menu nel Finder"):
+			s.NoFinderMarks = !s.NoFinderMarks
+			orig.NoFinderMarks = s.NoFinderMarks
+			_ = saveSettings(p, *s)
+			setFinderBadges(p, !s.NoFinderMarks)
 		case strings.HasPrefix(c, "Novità"):
 			s.RefreshMin = askNumber("Entro quanti minuti vedere le modifiche fatte dai colleghi nelle cartelle che non stai guardando?\n(Le cartelle aperte di recente si aggiornano da sole in pochi secondi. Valori bassi = più richieste al server remoto.)", s.RefreshMin, 1, 120)
 		}
