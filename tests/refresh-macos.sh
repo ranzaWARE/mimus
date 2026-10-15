@@ -93,7 +93,7 @@ measure(){ # nome argomenti...
 }
 
 if [ $# -eq 0 ]; then
-    set -- come-1.5.1 "--poll-interval 15s --option acdirmax=5 --option nonegnamecache"
+    set -- servizio "--poll-interval 15s --option acdirmax=5 --option nonegnamecache"
 fi
 while [ $# -ge 2 ]; do
     # shellcheck disable=SC2086
