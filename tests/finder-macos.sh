@@ -46,7 +46,7 @@ cleanup(){ osascript -e 'tell application "Finder" to close every window' >/dev/
 trap cleanup EXIT
 for _ in $(seq 60); do mount | grep -q " on $M " && break; sleep 0.5; done
 curl -s -X POST -H 'Content-Type: application/json' -d '{"path": "locale.txt"}' http://127.0.0.1:5572/vfs/mimus-download > /dev/null
-ST="$(curl -s -X POST -H 'Content-Type: application/json' -d '{"dir": ""}' http://127.0.0.1:5572/vfs/mimus-states | tr -d ' \n')"
+ST="$(curl -s -X POST -H 'Content-Type: application/json' -d '{"dir": ""}' http://127.0.0.1:5572/vfs/mimus-states | tr -d ' \n\t')"
 echo "stati: $ST"
 case "$ST" in *'"name":"locale.txt","state":"local"'*'"name":"remoto.txt","state":"remote"'*) echo "  OK   stati dal servizio";;
     *) echo "::error::stati sbagliati: $ST"; FAILS=$((FAILS + 1));; esac
@@ -55,7 +55,7 @@ case "$ST" in *'"name":"locale.txt","state":"local"'*'"name":"remoto.txt","state
 START="$(date '+%Y-%m-%d %H:%M:%S')"
 open "$M"; sleep 20
 PROC="$(pgrep -fl MIMUSFinder || true)"
-LOGS="$(log show --start "$START" --style compact --predicate 'eventMessage CONTAINS "MIMUS Finder"' 2>/dev/null | grep 'MIMUS Finder' | tail -n 15)"
+LOGS="$(log show --start "$START" --style compact --info --predicate 'process == "MIMUSFinder" OR eventMessage CONTAINS "MIMUSFinder" OR eventMessage CONTAINS "app.mimus.finder"' 2>/dev/null | grep -v 'log run noninteractively' | cut -c1-220 | tail -n 40)"
 echo "processo: $PROC"; echo "$LOGS"
 echo "::notice title=estensione del Finder::processo: ${PROC:-nessuno}%0Apluginkit: $(echo "$PK" | enc)$(echo "${LOGS:-nessun messaggio}" | enc)"
 case "$LOGS" in *"locale.txt=local"*) echo "  OK   pallini messi dal Finder";;
