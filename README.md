@@ -30,7 +30,7 @@ Niente da imparare: è una cartella.
   <tr><td width="32%">⚡ <b>File al volo</b></td><td>I file si scaricano quando li apri e restano sul Mac: la volta dopo si aprono a velocità di disco (150–300 MB/s).</td></tr>
   <tr><td width="32%">✈️ <b>Offline senza pensieri</b></td><td>Modifichi, crei, rinomini, cancelli: MIMUS mette tutto in coda e lo applica sul server quando torni in rete, nell'ordine giusto.</td></tr>
   <tr><td width="32%">🤝 <b>Conflitti chiari</b></td><td>Se un collega ha cambiato lo stesso file, ti chiede cosa fare: <i>Scarta la mia</i>, <i>Tieni entrambe</i> o <i>Sovrascrivi</i>. Senza risposta vale sempre la scelta che non perde dati.</td></tr>
-  <tr><td width="32%">🛡️ <b>Collaudato contro la perdita di dati</b></td><td>A ogni versione 63 scenari provati con un server Samba vero e su un Mac vero, scelti anche dai problemi noti di strumenti simili: corrente che va via, rete che cade a metà caricamento, disco pieno, colleghi che modificano, cancellano o rinominano mentre lavori offline, salvataggi di Word e AutoCAD, due Mac sullo stesso file, il server che perde una cartella. Se uno solo fallisce, la versione non esce.</td></tr>
+  <tr><td width="32%">🛡️ <b>Collaudato contro la perdita di dati</b></td><td>A ogni versione 64 scenari provati con un server Samba vero e su un Mac vero, scelti anche dai problemi noti di strumenti simili: corrente che va via, rete che cade a metà caricamento, disco pieno, colleghi che modificano, cancellano o rinominano mentre lavori offline, salvataggi di Word e AutoCAD, due Mac sullo stesso file, il server che perde una cartella. Se uno solo fallisce, la versione non esce.</td></tr>
   <tr><td width="32%">👀 <b>Novità dei colleghi in pochi secondi</b></td><td>Le cartelle che stai guardando si aggiornano da sole in circa 15 secondi, e il Finder le ridisegna senza dover uscire e rientrare.</td></tr>
   <tr><td width="32%">🟢 <b>Sai sempre dove sta un file</b></td><td>Un pallino su ogni file: sul Mac, solo sul server, sempre sul Mac, da caricare.</td></tr>
   <tr><td width="32%">📌 <b>Scarica, tieni, libera spazio</b></td><td>Tasto destro: <i>Scarica ora</i>, <i>Mantieni sempre su questo Mac</i> (anche cartelle intere, file nuovi compresi), <i>Togli da questo Mac</i>.</td></tr>
@@ -178,7 +178,7 @@ Diagnostica da Terminale: `bash scripts/status.sh`.
 | `scripts/build-rclone.sh` | scarica rclone, applica patch e modulo, lancia i test, compila |
 | `scripts/build-mac-app.sh` | app universale (Apple Silicon + Intel), firma ad-hoc, DMG; le parti Swift si compilano solo su macOS |
 | `tests/e2e-linux.sh` | test end-to-end del modulo con Samba e FUSE (nella CI) |
-| `tests/dataloss-linux.sh` | 48 scenari di possibile perdita di dati: crash, corrente, rete, disco pieno, colleghi, offline, salvataggi di Word/AutoCAD, nomi (nella CI) |
+| `tests/dataloss-linux.sh` | 49 scenari di possibile perdita di dati: crash, corrente, rete, disco pieno, colleghi, offline, salvataggi di Word/AutoCAD, nomi (nella CI) |
 | `tests/dataloss-macos.sh` | 15 scenari che dipendono dal Mac: client NFS di macOS, scrittura su disco alla chiusura, scambio di file, maiuscole, accenti, crash (macOS, nella CI) |
 | `tests/app-smoke-linux.sh` | test dell'app: configurazione, aggiornamento, disinstallazione |
 | `tests/finder-macos.sh` | estensione del Finder: firma con sandbox, registrazione, avvio (macOS, nella CI) |
