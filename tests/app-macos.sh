@@ -32,7 +32,8 @@ BP="$(brew --prefix samba 2>/dev/null)/"
 SMBD="$(find "$BP" -name smbd \( -type f -o -type l \) 2>/dev/null | head -1)"
 SMBPASSWD="$(find "$BP" -name smbpasswd \( -type f -o -type l \) 2>/dev/null | head -1)"
 echo "Samba: $SMBD $SMBPASSWD"
-[ -x "$SMBD" ] || { echo "::error::manca smbd (brew install samba): $(ls -R "$BP" 2>&1 | head -40 | enc)"; exit 1; }
+[ -x "$SMBD" ] || SMBD="$(ls "$BP"/sbin/smbd "$BP"/libexec/*/smbd "$(brew --prefix)"/sbin/smbd 2>/dev/null | head -1)"
+[ -x "$SMBD" ] || { echo "::error::manca smbd (brew install samba): sbin: $(ls -la "$BP/sbin" 2>&1 | enc) libexec: $(ls "$BP/libexec" 2>&1 | head -20 | enc) prefix sbin: $(ls "$(brew --prefix)/sbin" 2>&1 | head -20 | enc)"; exit 1; }
 cat > "$T/smb.conf" <<EOF
 [global]
   server role = standalone server
