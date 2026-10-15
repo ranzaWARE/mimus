@@ -112,7 +112,12 @@ ln -s /Applications "$STAGE/Applications"
 cp packaging/Guida.html "$STAGE/Guida.html"
 rm -f "$DMG"
 if command -v hdiutil >/dev/null; then
-    hdiutil create -volname "$NAME" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null
+    # sui Mac della CI hdiutil a volte risponde «Resource busy»: si riprova
+    for try in 1 2 3 4 5; do
+        hdiutil create -volname "$NAME" -srcfolder "$STAGE" -ov -format UDZO "$DMG" >/dev/null && break
+        [ $try = 5 ] && exit 1
+        echo "hdiutil non riuscito, riprovo ($try)"; sleep $((try * 5))
+    done
 else
     T="${DMG_TOOLS:?DMG_TOOLS = cartella con hfsplus e dmg di libdmg-hfsplus}"
     IMG="$(mktemp -u).hfs"
