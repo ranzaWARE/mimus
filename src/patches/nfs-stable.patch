@@ -92,7 +92,7 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
  		} else if shutdownErr != nil {
  			return fmt.Errorf("failed to shutdown NFS server: %e", shutdownErr)
  		}
-@@ -114,3 +148,121 @@
+@@ -114,3 +148,123 @@
  
  	return
  }
@@ -124,22 +124,24 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
 +	return false
 +}
 +
-+// mimusUnmount unmounts, insisting: diskutil sometimes refuses while the
-+// Finder uses the folder, umount -f does not
++// mimusUnmount unmounts, insisting. umount -f first: it works also while
++// the Finder uses the folder and on a dead server, where diskutil can
++// refuse or hang (each command has a time limit)
 +func mimusUnmount(mountpoint string) error {
 +	var last error
 +	for try := 0; try < 4; try++ {
-+		var cmds [][]string
-+		if runtime.GOOS == "darwin" {
-+			cmds = append(cmds, []string{"diskutil", "unmount", "force", mountpoint})
-+		}
 +		umount := []string{"umount", "-f", mountpoint}
 +		if sudo {
 +			umount = append([]string{"sudo"}, umount...)
 +		}
-+		cmds = append(cmds, umount)
++		cmds := [][]string{umount}
++		if runtime.GOOS == "darwin" {
++			cmds = append(cmds, []string{"diskutil", "unmount", "force", mountpoint})
++		}
 +		for _, c := range cmds {
-+			out, err := exec.Command(c[0], c[1:]...).CombinedOutput()
++			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
++			out, err := exec.CommandContext(ctx, c[0], c[1:]...).CombinedOutput()
++			cancel()
 +			if err == nil && !mimusIsMounted(mountpoint) {
 +				return nil
 +			}
@@ -200,10 +202,10 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
 +  exit 0
 +fi
 +for i in 1 2 3; do
-+  diskutil unmount force "$1" && exit 0
-+  umount -f "$1" && exit 0
++  umount -f "$1" && { echo "$(date) cartella scollegata"; exit 0; }
 +  sleep 2
-+done`
++done
++diskutil unmount force "$1"`
 +	logFile := filepath.Join(os.TempDir(), "mimus-scollega.log")
 +	cmd := exec.Command("/bin/sh", "-c", script, "sh", mountpoint, host, port, logFile)
 +	cmd.Env = append(os.Environ(), "PATH=/usr/sbin:/usr/bin:/sbin:/bin")
