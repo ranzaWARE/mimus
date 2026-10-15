@@ -20,11 +20,11 @@ jobs:
         with:
           go-version: '1.24'
       - name: rclone-mimus (con test)
-        run: bash scripts/build-rclone.sh
+        run: bash scripts/ci-run.sh rclone-mimus bash scripts/build-rclone.sh
       - name: App e DMG (con test dell'app)
         env:
           REQUIRE_MENU: '1'
-        run: bash scripts/build-mac-app.sh
+        run: bash scripts/ci-run.sh app bash scripts/build-mac-app.sh
       - name: Prova dell'icona nella barra dei menu
         run: bash tests/menubar-macos.sh
       - name: Prova dell'aggiornamento automatico
