@@ -3,6 +3,7 @@ package offline
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/rclone/rclone/fs"
+	"github.com/rclone/rclone/fs/config"
 	"github.com/rclone/rclone/fs/rc"
 )
 
@@ -181,7 +183,12 @@ func (f *Fs) cleanOrphans(ctx context.Context) {
 	if call == nil {
 		return
 	}
-	out, err := call.Fn(ctx, rc.Params{})
+	hold := f.massHold()
+	params := rc.Params{}
+	if !hold.Since.IsZero() && time.Since(hold.Since) > massHoldFor {
+		params["force"] = true // held long enough: deleted on purpose
+	}
+	out, err := call.Fn(ctx, params)
 	if err != nil {
 		fs.Debugf(f, "copie di file non più sul server: %v", err)
 		return
@@ -189,6 +196,41 @@ func (f *Fs) cleanOrphans(ctx context.Context) {
 	if removed, _ := out["removed"].([]string); len(removed) > 0 {
 		fs.Infof(f, "tolte da questo Mac %d copie di file non più sul server remoto", len(removed))
 	}
+	held, _ := out["held"].([]string)
+	switch {
+	case len(held) > 0 && hold.Since.IsZero():
+		f.setMassHold(massHold{Since: time.Now(), Count: len(held)})
+		f.notify(fmt.Sprintf("Sul server remoto non trovo più %d file che hai anche su questo Mac (per esempio «%s»).\n\nPotrebbe essere un problema del server: per %d giorni le copie restano su questo Mac, nella cartella\n%s\n\nSe i file sono stati cancellati di proposito non serve fare nulla. Altrimenti avvisa chi gestisce il server.",
+			len(held), held[0], int(massHoldFor/(24*time.Hour)), filepath.Join(config.GetCacheDir(), "vfs", f.name)))
+	case len(held) == 0 && !hold.Since.IsZero():
+		f.setMassHold(massHold{}) // back to normal, or removed after the wait
+	}
+}
+
+// massHold: since when many copies have been kept because their files
+// disappeared from the remote all together
+type massHold struct {
+	Since time.Time `json:"since"`
+	Count int       `json:"count"`
+}
+
+const (
+	massHoldFile = "gone-hold.json"
+	massHoldFor  = 7 * 24 * time.Hour
+)
+
+func (f *Fs) massHold() (h massHold) {
+	readJSON(filepath.Join(f.store.path, massHoldFile), &h)
+	return h
+}
+
+func (f *Fs) setMassHold(h massHold) {
+	name := filepath.Join(f.store.path, massHoldFile)
+	if h.Since.IsZero() {
+		_ = os.Remove(name)
+		return
+	}
+	_ = writeJSON(name, h)
 }
 
 // keepPinned asks the VFS (rc vfs/mimus-download, same process) to

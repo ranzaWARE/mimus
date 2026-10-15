@@ -1,5 +1,5 @@
 diff --git a/vfs/vfscache/cache.go b/vfs/vfscache/cache.go
-index 0ffa30c..b9fdd35 100644
+index 0ffa30c..70af984 100644
 --- a/vfs/vfscache/cache.go
 +++ b/vfs/vfscache/cache.go
 @@ -144,9 +144,30 @@ func New(ctx context.Context, fremote fs.Fs, opt *vfscommon.Options, avFn AddVir
@@ -233,10 +233,132 @@ index 0ffa30c..b9fdd35 100644
  
  	c.mu.Lock()
 diff --git a/vfs/vfscache/item.go b/vfs/vfscache/item.go
-index 66adc9b..a02dfae 100644
+index 66adc9b..17e68d3 100644
 --- a/vfs/vfscache/item.go
 +++ b/vfs/vfscache/item.go
-@@ -582,6 +582,61 @@ func unlockMutexForCall(mu *sync.Mutex, f func()) {
+@@ -7,10 +7,12 @@ import (
+ 	"fmt"
+ 	"io"
+ 	"os"
++	"path/filepath"
+ 	"sync"
+ 	"time"
+ 
+ 	"github.com/rclone/rclone/fs"
++	"github.com/rclone/rclone/fs/config"
+ 	"github.com/rclone/rclone/fs/fserrors"
+ 	"github.com/rclone/rclone/fs/operations"
+ 	"github.com/rclone/rclone/lib/file"
+@@ -78,6 +80,9 @@ type Info struct {
+ 	Rs          ranges.Ranges // which parts of the file are present
+ 	Fingerprint string        // fingerprint of remote object
+ 	Dirty       bool          // set if the backing file has been modified
++	// MIMUS: a write to the local copy failed (disk full...): the copy is
++	// not what the app meant to save, never uploaded
++	MimusWriteFailed bool `json:",omitempty"`
+ }
+ 
+ // Items are a slice of *Item ordered by ATime
+@@ -153,8 +158,10 @@ func newItem(c *Cache, name string) (item *Item) {
+ 	// Try to load the metadata
+ 	exists, err := item.load()
+ 	if !exists {
++		item._quarantine("metadata doesn't exist") // MIMUS
+ 		item._removeFile("metadata doesn't exist")
+ 	} else if err != nil {
++		item._quarantine(fmt.Sprintf("failed to load metadata: %v", err)) // MIMUS
+ 		item.remove(fmt.Sprintf("failed to load metadata: %v", err))
+ 	}
+ 
+@@ -207,21 +214,74 @@ func (item *Item) load() (exists bool, err error) {
+ //
+ // call with the lock held
+ func (item *Item) _save() (err error) {
++	return item._saveMeta(false)
++}
++
++// _saveMeta writes the metadata. MIMUS: via a temporary file renamed over
++// the old one, so a crash or power loss leaves the old or the new metadata,
++// never an empty or half written file (which made rclone delete the copy,
++// with any changes not yet uploaded). durable: synced to disk first.
++//
++// call with the lock held
++func (item *Item) _saveMeta(durable bool) (err error) {
+ 	osPathMeta := item.c.toOSPathMeta(item.name) // No locking in Cache
+-	out, err := os.Create(osPathMeta)
++	tmp := osPathMeta + mimusMetaTmp
++	out, err := os.Create(tmp)
+ 	if err != nil {
+ 		return fmt.Errorf("vfs cache item: failed to write metadata: %w", err)
+ 	}
+-	defer fs.CheckClose(out, &err)
+ 	encoder := json.NewEncoder(out)
+ 	encoder.SetIndent("", "\t")
+ 	err = encoder.Encode(item.info)
+ 	if err != nil {
+-		return fmt.Errorf("vfs cache item: failed to encode metadata: %w", err)
++		err = fmt.Errorf("vfs cache item: failed to encode metadata: %w", err)
++	} else if durable {
++		err = out.Sync()
++	}
++	if cerr := out.Close(); err == nil {
++		err = cerr
++	}
++	if err == nil {
++		err = os.Rename(tmp, osPathMeta)
++	}
++	if err != nil {
++		_ = os.Remove(tmp)
++		return fmt.Errorf("vfs cache item: failed to write metadata: %w", err)
+ 	}
+ 	return nil
+ }
+ 
++// suffix of the metadata being written (see _saveMeta)
++const mimusMetaTmp = ".mimus-tmp"
++
++// _quarantine: MIMUS. The metadata of a copy could not be read (crash or
++// power loss while saving it, file damaged): rclone would delete the copy,
++// and with it any changes not yet uploaded. It is moved aside instead, in
++// the "recuperati" folder next to the cache, and nothing is uploaded from
++// it (it may be incomplete). Returns true if moved.
++//
++// call with the lock held
++func (item *Item) _quarantine(reason string) bool {
++	if filepath.Ext(item.name) == mimusMetaTmp {
++		return false
++	}
++	osPath := item.c.toOSPath(item.name) // No locking in Cache
++	fi, err := os.Stat(osPath)
++	if err != nil || !fi.Mode().IsRegular() || fi.Size() == 0 {
++		return false
++	}
++	dst := filepath.Join(config.GetCacheDir(), "recuperati", time.Now().Format("2006-01-02 150405"), toOSPath(item.name))
++	if err = os.MkdirAll(filepath.Dir(dst), 0o700); err == nil {
++		err = os.Rename(osPath, dst)
++	}
++	if err != nil {
++		fs.Errorf(item.name, "vfs cache: copia con metadati illeggibili non messa da parte: %v", err)
++		return false
++	}
++	fs.Errorf(item.name, "vfs cache: %s: la copia su questo computer è stata messa da parte in %q (potrebbe contenere modifiche non caricate)", reason, dst)
++	return true
++}
++
+ // truncate the item to the given size, creating it if necessary
+ //
+ // this does not mark the object as dirty
+@@ -329,6 +389,9 @@ func (item *Item) Truncate(size int64) (err error) {
+ 	if item.fd == nil {
+ 		return errors.New("vfs cache item truncate: internal error: didn't Open file")
+ 	}
++	if size == 0 {
++		item.info.MimusWriteFailed = false // MIMUS: written again from the start
++	}
+ 
+ 	// Read old size
+ 	oldSize, err := item._getSize()
+@@ -582,6 +645,61 @@ func unlockMutexForCall(mu *sync.Mutex, f func()) {
  	f()
  }
  
@@ -298,7 +420,24 @@ index 66adc9b..a02dfae 100644
  // Store stores the local cache file to the remote object, returning
  // the new remote object. objOld is the old object if known.
  //
-@@ -598,6 +653,34 @@ func (item *Item) _store(ctx context.Context, storeFn StoreFn) (err error) {
+@@ -589,6 +707,16 @@ func unlockMutexForCall(mu *sync.Mutex, f func()) {
+ func (item *Item) _store(ctx context.Context, storeFn StoreFn) (err error) {
+ 	// defer log.Trace(item.name, "item=%p", item)("err=%v", &err)
+ 
++	// MIMUS: a write to the local copy failed (disk full...): it is not what
++	// the app meant to save. Never uploaded over the server version: set
++	// aside, and the server version is shown again
++	if item.info.MimusWriteFailed {
++		item._quarantine("scrittura sul disco di questo computer non riuscita")
++		item.info.MimusWriteFailed = false
++		item.info.Rs = nil
++		return item._finishWithoutUpload(item.o, storeFn)
++	}
++
+ 	// Transfer the temp file to the remote
+ 	cacheObj, err := item.c.fcache.NewObject(ctx, item.name)
+ 	if err != nil && err != fs.ErrorObjectNotFound {
+@@ -598,6 +726,34 @@ func (item *Item) _store(ctx context.Context, storeFn StoreFn) (err error) {
  	// Object has disappeared if cacheObj == nil
  	if cacheObj != nil {
  		o, name := item.o, item.name
@@ -333,3 +472,25 @@ index 66adc9b..a02dfae 100644
  		unlockMutexForCall(&item.mu, func() {
  			o, err = operations.Copy(ctx, item.c.fremote, o, name, cacheObj)
  		})
+@@ -1323,6 +1479,12 @@ func (item *Item) WriteAt(b []byte, off int64) (n int, err error) {
+ 	if n > 0 {
+ 		item._dirty()
+ 	}
++	if err != nil && !item.info.MimusWriteFailed { // MIMUS
++		item.info.MimusWriteFailed = true
++		item.info.Dirty = true
++		fs.Errorf(item.name, "vfs cache: scrittura sul disco di questo computer non riuscita: %v", err)
++		_ = item._save()
++	}
+ 	end := off + int64(n)
+ 	// Writing off the end of the file so need to make some
+ 	// zeroes.  we do this by showing that we have written to the
+@@ -1409,7 +1571,7 @@ func (item *Item) Sync() (err error) {
+ 	if err != nil {
+ 		return fmt.Errorf("vfs cache item sync: failed to sync file: %w", err)
+ 	}
+-	err = item._save()
++	err = item._saveMeta(true)
+ 	if err != nil {
+ 		return fmt.Errorf("vfs cache item sync: failed to sync metadata: %w", err)
+ 	}

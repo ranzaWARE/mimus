@@ -543,6 +543,14 @@ td.icon {{ width: 64px; text-align: center; vertical-align: middle; }}
     <p>Ha il cerchio grigio: non era mai stato aperto su questo Mac (o era stato tolto perché non usato da 30 giorni) e si potrà aprire quando torni in rete. Prima di partire usa <a href="#sulmac">Scarica ora</a> o <em>Mantieni sempre su questo Mac</em> sulle cartelle che ti servono.</p></details>
   <details><summary>Trovo file con «conflitto Mac» nel nome</summary>
     <p>Sono le tue versioni salvate in un conflitto (vedi <a href="#popup">messaggi</a>). Confrontale con l’originale e cancella quella che non serve.</p></details>
+  <details><summary>Non riesco a salvare un file chiamato «CON», «AUX», «NUL»…</summary>
+    <p>Sono nomi riservati di Windows (anche con un’estensione, come «con.txt»): il server non li può usare correttamente, quindi MIMUS li rifiuta subito. Scegli un altro nome.</p></details>
+  <details><summary>Il Mac ha il disco pieno e un salvataggio non è riuscito</summary>
+    <p>Il file rimasto a metà non viene caricato sul server, dove resta la versione buona: MIMUS lo mette tra i «file recuperati». Libera spazio e salva di nuovo.</p></details>
+  <details><summary>Un messaggio dice che sul server mancano molti file</summary>
+    <p>Quando tanti file che hai sul Mac spariscono tutti insieme dal server remoto (un disco del server non montato, una cartella spostata per errore, un virus che rinomina i file), MIMUS non toglie le copie dal Mac per 7 giorni: potrebbero essere le uniche rimaste. Il messaggio indica dove sono. Se i file sono stati cancellati di proposito non serve fare nulla; altrimenti avvisa chi gestisce il server.</p></details>
+  <details><summary>«File recuperati dopo un arresto improvviso»</summary>
+    <p>Se il Mac si spegne di colpo (corrente, batteria) proprio mentre MIMUS registra un file, al riavvio quel file può non essere più sicuro da caricare. MIMUS non lo carica e non lo cancella: lo mette da parte nella cartella indicata in <em>Apri MIMUS…</em>. Aprilo, controlla che sia completo e, se serve, ricopialo nella cartella collegata; poi cancellalo da lì.</p></details>
 </section>
 
 <section id="it">

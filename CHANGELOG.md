@@ -3,6 +3,42 @@
 Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
 `rclone-mimus version` (es. `v1.72.0-mimus-1.0.0`).
 
+## 1.7.0 — 2026-10-15
+
+Secondo giro contro la perdita di dati, partendo dai problemi noti di
+strumenti simili (rclone, Syncthing, OneDrive, Dropbox, client NFS di macOS,
+salvataggi di Word e AutoCAD). Ora 63 scenari, provati a ogni versione.
+
+- **Salvataggio come Word mentre si è offline** (cancella l'originale e
+  rinomina il temporaneo): se intanto un collega aveva modificato il file, al
+  ritorno in rete la sua versione veniva **sovrascritta senza chiedere**. Ora
+  compare la domanda e, senza risposta, si tengono entrambe. In generale un
+  file nuovo non sostituisce mai in silenzio un file del server diverso da
+  quello che il Mac conosceva.
+- **Salvataggio sicuro sopra un file cambiato da un collega**: la versione
+  del collega viene messa da parte («nome (versione di un collega …)»)
+  invece di essere sovrascritta.
+- **Corrente che va via o Mac che si spegne di colpo**: i dettagli dei file
+  da caricare vengono scritti in modo che un'interruzione non li possa
+  rovinare; se succede lo stesso, il file non viene più cancellato ma messo
+  da parte nella cartella «recuperati» (indicata in *Apri MIMUS…*). Quando
+  un'app salva e chiude un file, MIMUS lo scrive davvero sul disco del Mac
+  prima di dire che è salvato.
+- **Disco del Mac pieno durante un salvataggio**: il file rimasto a metà non
+  viene più caricato sopra quello buono del server; viene messo da parte.
+- **Tanti file spariti insieme dal server** (disco del server non montato,
+  cartella spostata per errore, virus): le copie su questo Mac restano per
+  7 giorni, con un avviso, invece di essere tolte subito.
+- **Nomi riservati di Windows** (CON, AUX, NUL, COM1…): rifiutati subito,
+  come su Windows. Prima il server li accettava ma li mostrava con un nome
+  inventato e il file sembrava sparito.
+- **Disinstallazione o cambio della cartella dei file con il collegamento
+  fermo**: le modifiche non ancora caricate ora vengono contate lo stesso
+  (prima risultavano zero) e serve scrivere OK. Viene ricontrollato anche
+  subito prima di cancellare, nel caso qualcuno abbia salvato nel frattempo.
+- La copia segue un file rinominato sul server anche quando la cartella è
+  aperta nel Finder (prima i pallini lo impedivano).
+
 ## 1.6.4 — 2026-10-15
 
 Giro di prove a caccia di situazioni in cui si potevano perdere dati: 45

@@ -1,9 +1,48 @@
+diff --git a/vfs/file.go b/vfs/file.go
+index 76aa03b..771c5c6 100644
+--- a/vfs/file.go
++++ b/vfs/file.go
+@@ -245,6 +245,10 @@ func (f *File) rename(ctx context.Context, destDir *Dir, newName string) error {
+ 	// File.mu is unlocked here to call Dir.Path()
+ 	newPath := path.Join(destDir.Path(), newCacheName)
+ 
++	// MIMUS: the version of the file this rename replaces, as this computer
++	// knows it (a safe-save replaces the file the user had opened)
++	replacedFP := d.vfs.mimusReplacedFingerprint(destDir, newName, newPath, f)
++
+ 	renameCall := func(ctx context.Context) (err error) {
+ 		// chain rename calls if any
+ 		if oldPendingRenameFun != nil {
+@@ -267,6 +271,11 @@ func (f *File) rename(ctx context.Context, destDir *Dir, newName string) error {
+ 
+ 			// do the move of the remote object
+ 			dstOverwritten, _ := d.Fs().NewObject(ctx, newPath)
++			// MIMUS: the file being replaced changed on the server since
++			// this computer knew it: that version is set aside, not lost
++			if dstOverwritten != nil && d.vfs.mimusSetAsideIfChanged(ctx, dstOverwritten, replacedFP) {
++				dstOverwritten = nil
++			}
+ 			newObject, err = operations.Move(ctx, d.Fs(), dstOverwritten, newPath, o)
+ 			if err != nil {
+ 				fs.Errorf(f.Path(), "File.Rename error: %v", err)
+@@ -284,6 +293,11 @@ func (f *File) rename(ctx context.Context, destDir *Dir, newName string) error {
+ 		if d.vfs.cache != nil && d.vfs.cache.Exists(oldPath) {
+ 			if err := d.vfs.cache.Rename(oldPath, newPath, newObject); err != nil {
+ 				fs.Infof(f.Path(), "File.Rename failed in Cache: %v", err)
++			} else if o == nil {
++				// MIMUS: a new file put in place of another one is a new
++				// version of that one: uploaded over it only if it did
++				// not change meanwhile
++				d.vfs.cache.SetBase(newPath, replacedFP)
+ 			}
+ 		}
+ 		// Update the node with the new details
 diff --git a/vfs/mimus.go b/vfs/mimus.go
 new file mode 100644
-index 0000000..1f80cc2
+index 0000000..9305891
 --- /dev/null
 +++ b/vfs/mimus.go
-@@ -0,0 +1,449 @@
+@@ -0,0 +1,586 @@
 +package vfs
 +
 +// MIMUS: what the Finder extension needs. For the files of a folder: on
@@ -14,12 +53,15 @@ index 0000000..1f80cc2
 +	"bytes"
 +	"context"
 +	"errors"
++	"fmt"
 +	"io"
 +	"os"
 +	"path"
 +	"strings"
++	"time"
 +
 +	"github.com/rclone/rclone/fs"
++	"github.com/rclone/rclone/fs/operations"
 +	"github.com/rclone/rclone/fs/rc"
 +	"github.com/rclone/rclone/vfs/vfscache"
 +)
@@ -344,11 +386,14 @@ index 0000000..1f80cc2
 +	if err != nil {
 +		return nil, err
 +	}
-+	removed, renamed := []string{}, []string{}
++	removed, renamed, held := []string{}, []string{}, []string{}
 +	g, ok := vfs.f.(GoneChecker)
 +	if !ok || vfs.cache == nil {
-+		return rc.Params{"removed": removed, "renamed": renamed}, nil
++		return rc.Params{"removed": removed, "renamed": renamed, "held": held}, nil
 +	}
++	force, _ := in.GetBool("force")
++	var gone []string
++	copies := 0
 +	for _, name := range vfs.cache.Names("") {
 +		if ctx.Err() != nil {
 +			break
@@ -357,11 +402,22 @@ index 0000000..1f80cc2
 +		if !st.Cached || st.Dirty || st.Open {
 +			continue
 +		}
-+		if !g.Gone(ctx, name) {
++		copies++
++		if g.Gone(ctx, name) {
++			gone = append(gone, name)
++		}
++	}
++	// renamed on the server: the copy follows the new name (same content,
++	// checked), so it is not downloaded again
++	var left []string
++	for _, name := range gone {
++		if ctx.Err() != nil {
++			break
++		}
++		st := vfs.cache.State(name)
++		if !st.Cached || st.Dirty || st.Open {
 +			continue
 +		}
-+		// renamed on the server: the copy follows the new name, so it is
-+		// not downloaded again
 +		if newName, o := vfs.mimusRenamedTo(ctx, name, st); newName != "" {
 +			if err := vfs.cache.Rename(name, newName, o); err == nil {
 +				fs.Infof(nil, "MIMUS: %q rinominato sul server in %q: la copia su questo Mac lo segue", name, newName)
@@ -371,11 +427,30 @@ index 0000000..1f80cc2
 +				fs.Errorf(nil, "MIMUS: copia di %q non spostata in %q: %v", name, newName, err)
 +			}
 +		}
++		left = append(left, name)
++	}
++	// many files gone at once (server emptied, share or disk not mounted,
++	// files encrypted and renamed by a virus...): the copies on this
++	// computer may be the only ones left. They are kept; the caller decides
++	// when to go on (force).
++	if !force && mimusMassGone(len(left), copies) {
++		fs.Errorf(nil, "MIMUS: %d file su %d copie su questo Mac non sono più sul server remoto: le copie restano", len(left), copies)
++		return rc.Params{"removed": removed, "renamed": renamed, "held": left}, nil
++	}
++	for _, name := range left {
++		if ctx.Err() != nil {
++			break
++		}
 +		if vfs.cache.Evict(ctx, name) {
 +			removed = append(removed, name)
 +		}
 +	}
-+	return rc.Params{"removed": removed, "renamed": renamed}, nil
++	return rc.Params{"removed": removed, "renamed": renamed, "held": held}, nil
++}
++
++// mimusMassGone: gone out of copies is too many to be ordinary deletions
++func mimusMassGone(gone, copies int) bool {
++	return gone >= 20 && (gone >= 200 || gone*100 >= copies*30)
 +}
 +
 +// mimusRenamedTo looks, in the same folder, for the file name was renamed
@@ -453,18 +528,121 @@ index 0000000..1f80cc2
 +	}
 +	return true
 +}
++
++// MimusSync makes the local copy of the file at path durable (see
++// vfscache.Cache.SyncToDisk). Used by the NFS server for COMMIT and stable
++// writes.
++func (vfs *VFS) MimusSync(path string) error {
++	if vfs.cache == nil {
++		return nil
++	}
++	node, err := vfs.Stat(path)
++	if err != nil {
++		return err
++	}
++	f, ok := node.(*File)
++	if !ok {
++		return nil
++	}
++	if err := vfs.cache.SyncToDisk(f.CachePath()); err != nil {
++		fs.Errorf(path, "MIMUS: salvataggio su disco non riuscito: %v", err)
++		return err
++	}
++	fs.Debugf(path, "MIMUS: salvato su disco")
++	return nil
++}
++
++// mimusReplacedFingerprint returns the version of the file at newPath that
++// renaming f there replaces, as this computer knows it: the one its local
++// copy comes from, otherwise the one in the folder listing. "" if none.
++func (vfs *VFS) mimusReplacedFingerprint(destDir *Dir, leaf, newPath string, f *File) string {
++	if vfs.cache != nil {
++		if fp := vfs.cache.State(newPath).Fingerprint; fp != "" && !vfscache.IsStale(fp) {
++			return fp
++		}
++	}
++	node, err := destDir.stat(leaf)
++	if err != nil {
++		return ""
++	}
++	file, ok := node.(*File)
++	if !ok || file == f {
++		return ""
++	}
++	if o := file.getObject(); o != nil {
++		return fs.Fingerprint(context.TODO(), o, vfs.Opt.FastFingerprint)
++	}
++	return ""
++}
++
++// mimusSetAsideIfChanged: before a rename replaces dst on the server, if
++// dst is no longer the version this computer knew (someone changed it
++// meanwhile), it is renamed "name (versione di un collega ...).ext"
++// instead of being overwritten. True if moved aside.
++func (vfs *VFS) mimusSetAsideIfChanged(ctx context.Context, dst fs.Object, knownFP string) bool {
++	if knownFP == "" || fs.Fingerprint(ctx, dst, vfs.Opt.FastFingerprint) == knownFP {
++		return false
++	}
++	dir, leaf := path.Split(dst.Remote())
++	ext := path.Ext(leaf)
++	base := strings.TrimSuffix(leaf, ext)
++	stamp := time.Now().Format("2006-01-02 1504")
++	for i := 1; i < 100; i++ {
++		tag := "versione di un collega " + stamp
++		if i > 1 {
++			tag += fmt.Sprintf(" %d", i)
++		}
++		name := dir + base + " (" + tag + ")" + ext
++		if _, err := vfs.f.NewObject(ctx, name); err == nil {
++			continue
++		}
++		if _, err := operations.Move(ctx, vfs.f, nil, name, dst); err != nil {
++			fs.Errorf(dst, "MIMUS: versione cambiata sul server non messa da parte: %v", err)
++			return false
++		}
++		fs.Logf(dst, "MIMUS: cambiato sul server da qualcun altro prima di essere sostituito: quella versione è ora «%s»", name)
++		return true
++	}
++	return false
++}
++
++// mimusReservedName: names Windows (and so the SMB server) does not allow
++// for files and folders, with or without an extension: CON, PRN, AUX, NUL,
++// COM0-9, LPT0-9. A Samba server accepts them but shows them to everyone
++// with a made up name (like «CSHOFG~F.TXT»): on this computer the file
++// would seem to vanish. Better refused straight away, as on Windows.
++func mimusReservedName(leaf string) bool {
++	base := strings.ToUpper(leaf)
++	if i := strings.IndexByte(base, '.'); i >= 0 {
++		base = base[:i]
++	}
++	base = strings.TrimRight(base, " ")
++	switch base {
++	case "CON", "PRN", "AUX", "NUL", "CONIN$", "CONOUT$":
++		return true
++	}
++	return len(base) == 4 && (strings.HasPrefix(base, "COM") || strings.HasPrefix(base, "LPT")) &&
++		base[3] >= '0' && base[3] <= '9'
++}
++
++func mimusReservedErr(d *Dir, name string) error {
++	fs.Errorf(d, "MIMUS: il nome «%s» non è ammesso sul server remoto (nome riservato di Windows): scegline un altro", name)
++	return EINVAL
++}
 diff --git a/vfs/mimus_test.go b/vfs/mimus_test.go
 new file mode 100644
-index 0000000..09e3e32
+index 0000000..df0f3bf
 --- /dev/null
 +++ b/vfs/mimus_test.go
-@@ -0,0 +1,286 @@
+@@ -0,0 +1,391 @@
 +package vfs
 +
 +import (
 +	"context"
++	"fmt"
 +	"io"
 +	"os"
++	"path"
 +	"strings"
 +	"sync"
 +	"testing"
@@ -745,6 +923,109 @@ index 0000000..09e3e32
 +	}
 +	assert.True(t, got == want, "uploaded file mixes two versions")
 +}
++
++// many files gone from the server at once: the copies stay (unless forced)
++func TestMimusOrphansMassGone(t *testing.T) {
++	ctx := context.Background()
++	opt := vfscommon.Opt
++	opt.CacheMode = vfscommon.CacheModeFull
++	opt.DirCacheTime = fs.Duration(time.Millisecond)
++	r := fstest.NewRun(t)
++	pf := &pinFs{Fs: r.Fremote, pins: map[string]bool{}}
++	vfs := New(pf, &opt)
++	t.Cleanup(func() { cleanupVFS(t, vfs) })
++	var items []fstest.Item
++	for i := 0; i < 30; i++ {
++		items = append(items, r.WriteObject(ctx, fmt.Sprintf("dir/f%02d.txt", i), fmt.Sprintf("contenuto %d", i), t1))
++	}
++	fsp := rc.Params{"fs": fs.ConfigString(pf)}
++	_, err := rc.Calls.Get("vfs/mimus-download").Fn(ctx, rc.Params{"fs": fs.ConfigString(pf), "path": "dir"})
++	require.NoError(t, err)
++	for _, it := range items[:25] {
++		o, err := r.Fremote.NewObject(ctx, it.Path)
++		require.NoError(t, err)
++		require.NoError(t, o.Remove(ctx))
++	}
++	time.Sleep(10 * time.Millisecond)
++	out, err := rc.Calls.Get("vfs/mimus-orphans").Fn(ctx, fsp)
++	require.NoError(t, err)
++	assert.Len(t, out["held"], 25)
++	assert.Equal(t, []string{}, out["removed"])
++	assert.True(t, vfs.cache.State("dir/f00.txt").Complete)
++
++	fsp["force"] = true
++	out, err = rc.Calls.Get("vfs/mimus-orphans").Fn(ctx, fsp)
++	require.NoError(t, err)
++	assert.Len(t, out["removed"], 25)
++	assert.False(t, vfs.cache.State("dir/f00.txt").Cached)
++	assert.True(t, vfs.cache.State("dir/f29.txt").Complete)
++}
++
++// a file put in place of another (safe-save) never overwrites a version of
++// that file changed meanwhile by someone else
++func TestMimusRenameOverChanged(t *testing.T) {
++	ctx := context.Background()
++	opt := vfscommon.Opt
++	opt.CacheMode = vfscommon.CacheModeFull
++	opt.DirCacheTime = fs.Duration(time.Hour)
++	opt.WriteBack = fs.Duration(3 * time.Second) // new files stay local for a while
++	r := fstest.NewRun(t)
++	vfs := New(r.Fremote, &opt)
++	t.Cleanup(func() { cleanupVFS(t, vfs) })
++	r.WriteObject(ctx, "dir/a.txt", "versione 1", t1)
++	r.WriteObject(ctx, "dir/nuovo.txt", "versione del Mac", t1)
++	r.WriteObject(ctx, "dir/b.txt", "versione 1", t1)
++	_, err := vfs.Stat("dir/a.txt") // the Mac has seen the folder
++	require.NoError(t, err)
++	b1, err := r.Fremote.NewObject(ctx, "dir/b.txt")
++	require.NoError(t, err)
++	knownB := fs.Fingerprint(ctx, b1, false)
++
++	// already on the server: a colleague changed a.txt meanwhile
++	r.WriteObject(ctx, "dir/a.txt", "versione del collega", t2)
++	require.NoError(t, vfs.Rename("dir/nuovo.txt", "dir/a.txt"))
++	entries, err := r.Fremote.List(ctx, "dir")
++	require.NoError(t, err)
++	found := false
++	for _, e := range entries {
++		if strings.HasPrefix(path.Base(e.Remote()), "a (versione di un collega ") {
++			found = true
++		}
++	}
++	assert.True(t, found, "colleague's version set aside")
++
++	// not uploaded yet: carries the replaced version as base
++	h, err := vfs.OpenFile("dir/b.tmp", os.O_CREATE|os.O_WRONLY, 0o644)
++	require.NoError(t, err)
++	_, err = h.Write([]byte("versione del Mac"))
++	require.NoError(t, err)
++	require.NoError(t, h.Close())
++	require.NoError(t, vfs.Rename("dir/b.tmp", "dir/b.txt"))
++	assert.Equal(t, knownB, vfs.cache.State("dir/b.txt").Fingerprint)
++}
++
++// names Windows reserves are refused, not created and then shown mangled
++func TestMimusReservedNames(t *testing.T) {
++	for name, want := range map[string]bool{
++		"CON": true, "con.txt": true, "Aux.doc": true, "nul": true, "COM1.log": true,
++		"lpt9": true, "LPT1.tar.gz": true, "prn ": true,
++		"CONSOLE.txt": false, "contratto.docx": false, "COM10": false, "aux_file": false, "a.CON": false,
++	} {
++		assert.Equal(t, want, mimusReservedName(name), name)
++	}
++	opt := vfscommon.Opt
++	opt.CacheMode = vfscommon.CacheModeFull
++	r := fstest.NewRun(t)
++	vfs := New(r.Fremote, &opt)
++	t.Cleanup(func() { cleanupVFS(t, vfs) })
++	_, err := vfs.OpenFile("CON.txt", os.O_CREATE|os.O_WRONLY, 0o644)
++	assert.Error(t, err)
++	assert.Error(t, vfs.Mkdir("aux", 0o755))
++	h, err := vfs.OpenFile("normale.txt", os.O_CREATE|os.O_WRONLY, 0o644)
++	require.NoError(t, err)
++	require.NoError(t, h.Close())
++	assert.Error(t, vfs.Rename("normale.txt", "nul.txt"))
++}
 diff --git a/vfs/read_write.go b/vfs/read_write.go
 index 56b9c46..e03441b 100644
 --- a/vfs/read_write.go
@@ -775,10 +1056,10 @@ index 56b9c46..e03441b 100644
  }
 diff --git a/vfs/vfscache/mimus.go b/vfs/vfscache/mimus.go
 new file mode 100644
-index 0000000..dcfa747
+index 0000000..a7ea217
 --- /dev/null
 +++ b/vfs/vfscache/mimus.go
-@@ -0,0 +1,116 @@
+@@ -0,0 +1,166 @@
 +package vfscache
 +
 +// MIMUS: state of a file in the cache (for the Finder: on this Mac, only on
@@ -804,10 +1085,18 @@ index 0000000..dcfa747
 +	Fingerprint string // of the remote version the copy comes from
 +}
 +
-+// State returns the cache state of the file name
++// peek returns the item for name if the cache has one, without creating it
++func (c *Cache) peek(name string) *Item {
++	c.mu.Lock()
++	defer c.mu.Unlock()
++	return c.item[clean(name)]
++}
++
++// State returns the cache state of the file name. Never adds an entry to
++// the cache (the Finder asks for every file it shows).
 +func (c *Cache) State(name string) (st ItemState) {
-+	item, found := c.get(name)
-+	if !found {
++	item := c.peek(name)
++	if item == nil {
 +		return st
 +	}
 +	item.mu.Lock()
@@ -894,4 +1183,116 @@ index 0000000..dcfa747
 +		return nil
 +	}
 +	return item._ensure(0, item.info.Size)
++}
++
++// SyncToDisk makes the local copy of name and its metadata durable (on
++// disk, not only in memory). MIMUS: called when the Mac asks for it (NFS
++// COMMIT on close or fsync), so a power loss right after a save does not
++// lose it.
++func (c *Cache) SyncToDisk(name string) error {
++	name = clean(name)
++	item := c.peek(name)
++	if item == nil {
++		return nil
++	}
++	item.mu.Lock()
++	defer item.mu.Unlock()
++	if item.fd != nil {
++		if err := item.fd.Sync(); err != nil {
++			return err
++		}
++	} else if fd, err := os.OpenFile(c.toOSPath(name), os.O_RDWR, 0); err == nil {
++		err = fd.Sync()
++		if cerr := fd.Close(); err == nil {
++			err = cerr
++		}
++		if err != nil {
++			return err
++		}
++	} else if !os.IsNotExist(err) {
++		return err
++	}
++	return item._saveMeta(true)
++}
++
++// IsStale: fp marks a copy to be downloaded again (see staleFingerprint)
++func IsStale(fp string) bool { return fp == staleFingerprint }
++
++// SetBase records which remote version a new local file (not uploaded yet)
++// replaces, when it takes the name of an existing file: it is then uploaded
++// over it only if that version did not change meanwhile (MIMUS)
++func (c *Cache) SetBase(name, fingerprint string) {
++	if item := c.peek(name); item != nil {
++		item.adoptFingerprint(fingerprint)
++	}
++}
+diff --git a/vfs/vfscache/mimus_test.go b/vfs/vfscache/mimus_test.go
+new file mode 100644
+index 0000000..72441a5
+--- /dev/null
++++ b/vfs/vfscache/mimus_test.go
+@@ -0,0 +1,64 @@
++package vfscache
++
++import (
++	"context"
++	"os"
++	"path/filepath"
++	"testing"
++	"time"
++
++	"github.com/rclone/rclone/fs"
++	"github.com/rclone/rclone/fs/config"
++	"github.com/rclone/rclone/fstest"
++	"github.com/rclone/rclone/vfs/vfscommon"
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++// a copy with changes not yet uploaded whose metadata is damaged (power
++// loss while saving it) is put aside, never deleted
++func TestMimusQuarantineBadMetadata(t *testing.T) {
++	old := config.GetCacheDir()
++	require.NoError(t, config.SetCacheDir(t.TempDir()))
++	t.Cleanup(func() { _ = config.SetCacheDir(old) })
++	opt := vfscommon.Opt
++	opt.CachePollInterval = 0
++	opt.WriteBack = fs.Duration(time.Hour) // never uploaded during the test
++	r := fstest.NewRun(t)
++
++	ctx, cancel := context.WithCancel(context.Background())
++	c, err := New(ctx, r.Fremote, &opt, addVirtual)
++	require.NoError(t, err)
++	for _, name := range []string{"dir/vuoti.txt", "dir/rotti.txt"} {
++		item := c.Item(name)
++		require.NoError(t, item.Open(nil))
++		_, err = item.WriteAt([]byte("modifica non caricata"), 0)
++		require.NoError(t, err)
++		require.NoError(t, item.Close(nil))
++		require.True(t, item.IsDirty())
++	}
++	// metadata saved atomically: no temporary left behind
++	matches, _ := filepath.Glob(filepath.Join(c.metaRoot, "dir", "*"+mimusMetaTmp))
++	assert.Empty(t, matches)
++	require.NoError(t, c.SyncToDisk("dir/vuoti.txt"))
++	cancel()
++
++	// power loss: one metadata file empty, one cut in half
++	require.NoError(t, os.WriteFile(c.toOSPathMeta("dir/vuoti.txt"), nil, 0o600))
++	data, err := os.ReadFile(c.toOSPathMeta("dir/rotti.txt"))
++	require.NoError(t, err)
++	require.NoError(t, os.WriteFile(c.toOSPathMeta("dir/rotti.txt"), data[:len(data)/2], 0o600))
++
++	ctx2, cancel2 := context.WithCancel(context.Background())
++	defer cancel2()
++	c2, err := New(ctx2, r.Fremote, &opt, addVirtual)
++	require.NoError(t, err)
++	for _, name := range []string{"dir/vuoti.txt", "dir/rotti.txt"} {
++		assert.False(t, c2.State(name).Cached, name)
++		found, _ := filepath.Glob(filepath.Join(config.GetCacheDir(), "recuperati", "*", "dir", filepath.Base(name)))
++		require.Len(t, found, 1, name)
++		got, err := os.ReadFile(found[0])
++		require.NoError(t, err)
++		assert.Equal(t, "modifica non caricata", string(got))
++	}
 +}

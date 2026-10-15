@@ -1,0 +1,81 @@
+diff --git a/cmd/serve/nfs/filesystem.go b/cmd/serve/nfs/filesystem.go
+--- a/cmd/serve/nfs/filesystem.go
++++ b/cmd/serve/nfs/filesystem.go
+@@ -72,6 +72,11 @@
+ 	return f.vfs.Open(filename)
+ }
+ 
++// MimusSync makes the file durable on this computer (NFS COMMIT)
++func (f *FS) MimusSync(filename string) error {
++	return f.vfs.MimusSync(filename)
++}
++
+ // OpenFile opens a file
+ func (f *FS) OpenFile(filename string, flag int, perm os.FileMode) (node billy.File, err error) {
+ 	defer log.Trace(filename, "flag=0x%X, perm=%v", flag, perm)("%v, err=%v", &node, &err)
+diff --git a/vendor/github.com/willscott/go-nfs/nfs_oncommit.go b/vendor/github.com/willscott/go-nfs/nfs_oncommit.go
+--- a/vendor/github.com/willscott/go-nfs/nfs_oncommit.go
++++ b/vendor/github.com/willscott/go-nfs/nfs_oncommit.go
+@@ -9,7 +9,7 @@
+ 	"github.com/willscott/go-nfs-client/nfs/xdr"
+ )
+ 
+-// onCommit - note this is a no-op, as we always push writes to the backing store.
++// onCommit - MIMUS: syncs the file to disk (see nfs_onwrite.go)
+ func onCommit(ctx context.Context, w *response, userHandle Handler) error {
+ 	w.errorFmt = wccDataErrorFormatter
+ 	handle, err := xdr.ReadOpaque(w.req.Body)
+@@ -25,6 +25,12 @@
+ 	if !billy.CapabilityCheck(fs, billy.WriteCapability) {
+ 		return &NFSStatusError{NFSStatusServerFault, os.ErrPermission}
+ 	}
++	// MIMUS: really commit (sync to disk) what was written unstable
++	if syncer, ok := fs.(mimusSyncer); ok {
++		if err := syncer.MimusSync(fs.Join(path...)); err != nil && !os.IsNotExist(err) {
++			return &NFSStatusError{NFSStatusIO, err}
++		}
++	}
+ 
+ 	writer := bytes.NewBuffer([]byte{})
+ 	if err := xdr.Write(writer, uint32(NFSStatusOk)); err != nil {
+diff --git a/vendor/github.com/willscott/go-nfs/nfs_onwrite.go b/vendor/github.com/willscott/go-nfs/nfs_onwrite.go
+--- a/vendor/github.com/willscott/go-nfs/nfs_onwrite.go
++++ b/vendor/github.com/willscott/go-nfs/nfs_onwrite.go
+@@ -86,6 +86,19 @@
+ 		Log.Errorf("error closing: %v", err)
+ 		return &NFSStatusError{NFSStatusIO, err}
+ 	}
++	// MIMUS: honor the stability asked by the client. Answering "file
++	// sync" without syncing told the client the data was safe on disk when
++	// it was only in memory. Now: stable writes are synced before answering;
++	// unstable ones are answered as such, and the client sends COMMIT (on
++	// close or fsync), which syncs them.
++	stability := fileSync
++	if syncer, ok := fs.(mimusSyncer); ok {
++		if req.How == uint32(unstable) {
++			stability = unstable
++		} else if err := syncer.MimusSync(fullPath); err != nil {
++			return &NFSStatusError{NFSStatusIO, err}
++		}
++	}
+ 
+ 	writer := bytes.NewBuffer([]byte{})
+ 	if err := xdr.Write(writer, uint32(NFSStatusOk)); err != nil {
+@@ -98,7 +111,7 @@
+ 	if err := xdr.Write(writer, uint32(writtenCount)); err != nil {
+ 		return &NFSStatusError{NFSStatusServerFault, err}
+ 	}
+-	if err := xdr.Write(writer, fileSync); err != nil {
++	if err := xdr.Write(writer, stability); err != nil {
+ 		return &NFSStatusError{NFSStatusServerFault, err}
+ 	}
+ 	if err := xdr.Write(writer, w.Server.ID); err != nil {
+@@ -110,3 +123,8 @@
+ 	}
+ 	return nil
+ }
++
++// mimusSyncer: a file system that can make a file durable (MIMUS)
++type mimusSyncer interface {
++	MimusSync(filename string) error
++}

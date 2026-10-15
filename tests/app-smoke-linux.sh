@@ -112,6 +112,7 @@ case \$kind in
      case "\$msg" in
        *Disinstallare*) echo Disinstalla;;
        *"Cancellare anche"*) echo "Cancella tutto";;
+       *"lo stesso?"*) echo Procedi;;
        *) echo "\$def";;
      esac;;
   input) ans=""
@@ -235,8 +236,23 @@ printf 'Impostazioni\n~Pallini e menu\n\n\n' > $T/choices
 timeout 60 "$MAC/MIMUS"
 ok "estensione del Finder riaccesa" "tail -n 3 $T/cmds.log | grep -q 'pluginkit -e use -i app.mimus.finder'"
 
-echo "== disinstallazione con modifiche non ancora caricate"
+echo "== disinstallazione a collegamento fermo con un file da caricare"
 pkill -f "smbd -s $T/smb.conf"; sleep 8           # server remoto spento: si lavora offline
+echo "da caricare" > "$HOME/Server/da caricare.txt"; sleep 1
+printf 'Ferma collegamento\n\n' > $T/choices
+timeout 60 "$MAC/MIMUS"
+ok "collegamento fermato" "! mount | grep -q ' on $HOME/Server '"
+sed -i '1i scrivi OK|annulla' $T/inputs
+printf 'Disinstalla\n' > $T/choices
+timeout 60 "$MAC/MIMUS"
+ok "chiede di scrivere OK anche a collegamento fermo" "grep -q 'disinstallando adesso andrebbero PERSE' $T/ui.log && grep -q 'Disinstallazione annullata' $T/ui.log && [ -f '$P' ]"
+ok "il file da caricare resta sul Mac" "grep -rqs 'da caricare' '$HOME/Dati/MIMUS cache/vfs'"
+sed -i 1d $T/inputs; : > $T/ui.log
+printf 'Avvia collegamento\n\n' > $T/choices
+timeout 120 "$MAC/MIMUS"
+ok "collegamento riavviato" "mount | grep -q ' on $HOME/Server '"
+
+echo "== disinstallazione con modifiche non ancora caricate"
 mkdir "$HOME/Server/Fatta offline"; sleep 1
 J="$HOME/Dati/MIMUS cache/offline"
 ok "modifica offline in coda" "grep -rqs 'Fatta offline' '$J'"

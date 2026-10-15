@@ -47,6 +47,7 @@ cat > $T/smb.conf <<SMBEOF
   path = $S
   read only = no
   force user = root
+  veto files = /*vietato*/
 SMBEOF
 mkdir -p /run/samba
 id smbtest >/dev/null 2>&1 || useradd -M smbtest
@@ -70,7 +71,7 @@ versions(){ cat "$S/$1" "$S/$(dirname "$1")/"*conflitto* 2>/dev/null; }
 srv_on
 $R config create remoto smb host=127.0.0.1 user=smbtest pass=Passw0rd idle_timeout=2s --obscure >/dev/null
 $R config create mimus offline remote=remoto:Tecnico probe=127.0.0.1:445 ui=$T/ui.sh ask_timeout=20s >/dev/null
-for n in $(seq 35); do mkdir -p $S/$n; done
+for n in $(seq 48); do mkdir -p $S/$n; done
 echo "v1" > $S/1/a.txt
 head -c 20000000 /dev/urandom > $T/grande.bin; echo "piccolo originale" > $S/2/g.bin; echo "piccolo originale" > $S/3/g.bin
 echo "base" > $S/4/a.txt; echo "base" > $S/5/a.txt
@@ -93,6 +94,14 @@ echo "base" > $S/29/a.txt; echo "base" > $S/31/a.txt
 for i in $(seq 200); do echo "file $i" > $S/32/f$i.txt; done
 mkdir -p $S/33/D $S/34/D; echo "base" > $S/33/D/x.txt; echo "base" > $S/34/D/x.txt
 echo "base" > $S/35/a.txt
+echo "versione 1" > $S/36/Tav.dwg; echo "versione 0" > $S/36/Tav.bak
+echo "versione 1" > $S/37/Tav.dwg; echo "versione 0" > $S/37/Tav.bak
+echo "versione 1" > $S/38/Doc.docx
+mkdir -p $S/41/D; echo "base" > $S/44/a.txt
+for i in $(seq 30); do echo "copia $i" > $S/45/f$i.txt; done
+head -c 100000 /dev/urandom > $S/46/originale.bin
+echo "originale" > $S/47/g.bin
+head -c 3000000 /dev/urandom > $S/48/foto.jpg
 WB=2s startm
 ls -R $M >/dev/null; for f in 1/a.txt 4/a.txt 5/a.txt 7/A.txt 8/D/x.txt 9/X.txt 10/A.txt 11/D/x.txt 12/Caso.txt \
     17/Doc.txt 22/a.txt 22/b.txt 23/a.txt 24/a.txt 26/A.txt 29/a.txt 31/a.txt 33/D/x.txt 34/D/x.txt; do cat "$M/$f" >/dev/null; done
@@ -340,6 +349,118 @@ echo "modifica collega" > $S/35/a.txt
 srv_on; sleep 20
 ok "il file del collega resta intero" "[ \"\$(cat $S/35/a.txt)\" = 'modifica collega' ]"
 ok "nessun file che mescola due versioni" nomix35
+
+autocad(){ # salvataggio come AutoCAD: temporaneo, .dwg -> .bak, temporaneo -> .dwg
+    local d=$1
+    echo "versione 2" > $d/atmp1234.tmp
+    mv $d/Tav.bak $d/atmp5678
+    rm -f $d/Tav.dwl $d/Tav.dwl2
+    mv $d/Tav.dwg $d/Tav.bak
+    rm $d/atmp5678
+    mv $d/atmp1234.tmp $d/Tav.dwg
+    echo lock > $d/Tav.dwl; echo lock > $d/Tav.dwl2
+}
+echo "== 36. salvataggio come AutoCAD (temporaneo, .dwg -> .bak, temporaneo -> .dwg)"
+cat $M/36/Tav.dwg >/dev/null; echo lock > $M/36/Tav.dwl; echo lock > $M/36/Tav.dwl2
+autocad $M/36; sleep 1; rm -f $M/36/Tav.dwl $M/36/Tav.dwl2
+ok "sul server il disegno nuovo e il .bak col precedente" "waitfor '[ \"\$(cat $S/36/Tav.dwg 2>/dev/null)\" = \"versione 2\" ]' 30 && [ \"\$(cat $S/36/Tav.bak)\" = 'versione 1' ]"
+ok "nessun temporaneo rimasto" "sleep 5; [ \$(ls $S/36 | wc -l) -eq 2 ]"
+
+echo "== 37. offline: salvataggio come AutoCAD mentre il collega modifica il disegno"
+cat $M/37/Tav.dwg $M/37/Tav.bak >/dev/null; srv_off
+autocad $M/37; rm -f $M/37/Tav.dwl $M/37/Tav.dwl2
+echo "versione collega" > $S/37/Tav.dwg
+srv_on
+ok "nessuna delle due versioni persa" "waitfor 'grep -rqs \"versione 2\" $S/37/ && grep -rqs \"versione collega\" $S/37/' 60"
+
+echo "== 38. offline: salvataggio come Word (cancella l'originale, rinomina il temporaneo) mentre il collega modifica"
+cat $M/38/Doc.docx >/dev/null; srv_off
+echo "utente" > "$M/38/~\$Doc.docx"
+echo "versione Mac" > $M/38/~WRD0001.tmp; rm $M/38/Doc.docx; mv $M/38/~WRD0001.tmp $M/38/Doc.docx
+rm "$M/38/~\$Doc.docx"
+echo "versione collega" > $S/38/Doc.docx
+srv_on
+ok "nessuna delle due versioni persa" "waitfor 'grep -rqs \"versione Mac\" $S/38/ && grep -rqs \"versione collega\" $S/38/' 60"
+
+echo "== 39. salvataggio sicuro sopra un file che si sta caricando"
+stopm; EXTRA="--bwlimit 4M"; startm
+cp $T/grande.bin $M/39/g.bin; sleep 4
+echo "versione finale" > $M/39/.g.tmp && mv -f $M/39/.g.tmp $M/39/g.bin
+ok "sul server arriva l'ultima versione" "waitfor 'grep -qs \"versione finale\" $S/39/g.bin' 40"
+ok "e resta quella, senza temporanei" "sleep 10; grep -qs 'versione finale' $S/39/g.bin && [ \$(ls -A $S/39 | wc -l) -eq 1 ]"
+
+echo "== 40. file cancellato mentre si sta caricando"
+cp $T/grande.bin $M/40/g.bin; sleep 4; rm $M/40/g.bin
+ok "non ricompare sul server e non lascia pezzi" "sleep 20; [ \$(ls -A $S/40 | wc -l) -eq 0 ]"
+stopm; EXTRA=""; startm
+
+echo "== 41. cartella rinominata subito dopo averci salvato un file"
+ls $M/41/D >/dev/null
+echo "appena salvato" > $M/41/D/nuovo.txt; mv $M/41/D $M/41/E
+ok "il file arriva nella cartella col nome nuovo" "waitfor 'grep -qs \"appena salvato\" $S/41/E/nuovo.txt' 30 && [ ! -e $S/41/D ]"
+
+echo "== 42. il server rifiuta il file (permessi o nome non ammesso)"
+echo "dati importanti" > $M/42/rifiutato-vietato.txt; sleep 12
+ok "non c'è sul server" "[ ! -e $S/42/rifiutato-vietato.txt ]"
+ok "resta su questo Mac" "grep -qs 'dati importanti' $T/cache/vfs/mimus/42/rifiutato-vietato.txt"
+ok "ed è segnalato come da caricare" "rcj vfs/stats '{}' | python3 -c 'import json,sys; d=json.load(sys.stdin)[\"diskCache\"]; sys.exit(d[\"uploadsQueued\"]+d[\"uploadsInProgress\"]+d[\"erroredFiles\"] == 0)'"
+sed -i '/veto files/d' $T/smb.conf; smbcontrol -s $T/smb.conf smbd reload-config 2>/dev/null
+ok "quando il server lo accetta, arriva" "waitfor 'grep -qs \"dati importanti\" $S/42/rifiutato-vietato.txt' 120"
+
+all43(){ for n in "spazio finale " "punto finale."; do grep -qsF "contenuto di [$n]" "$M/43/$n" || return 1; done; }
+echo "== 43. nomi con spazio o punto finale e nomi riservati di Windows"
+for n in "spazio finale " "punto finale."; do echo "contenuto di [$n]" > "$M/43/$n"; done
+r43=rifiutati
+(echo x > "$M/43/CON.txt") 2>/dev/null && r43=accettati
+mkdir "$M/43/aux" 2>/dev/null && r43=accettati
+sleep 6; stopm; startm
+ok "nomi riservati di Windows (CON, AUX...) rifiutati subito" "[ $r43 = rifiutati ] && [ ! -e $S/43/CON.txt ] && [ ! -e $S/43/aux ]"
+ok "gli altri due file sul server" "[ \$(ls -A $S/43 | wc -l) -eq 2 ]"
+ok "si rileggono coi loro nomi dopo il riavvio" all43
+
+echo "== 44. corrente che va via mentre MIMUS salva i dettagli di un file da caricare"
+cat $M/44/a.txt >/dev/null; srv_off
+echo "scritto prima del blackout" > $M/44/a.txt; sleep 1
+crash; : > $T/cache/vfsMeta/mimus/44/a.txt
+startm; srv_on; sleep 10
+ok "il contenuto è messo da parte, non cancellato" "grep -rqs 'scritto prima del blackout' $T/cache/recuperati/"
+ok "sul server non arriva un file rovinato" "[ \"\$(cat $S/44/a.txt)\" = base ]"
+
+echo "== 45. tanti file spariscono insieme dal server (disco del server non montato)"
+cat $M/45/* >/dev/null
+mv $S/45 $S/45.via; mkdir $S/45
+stopm; startm; ls $M/45 >/dev/null
+ok "le copie restano su questo Mac" "sleep 55; [ \$(ls $T/cache/vfs/mimus/45 | wc -l) -eq 30 ]"
+ok "e l'utente viene avvisato" "grep -q 'non trovo più 30 file' $UI"
+rmdir $S/45; mv $S/45.via $S/45
+ok "tornato il server, i file si leggono" "waitfor 'cat $M/45/f7.txt 2>/dev/null | grep -qx \"copia 7\"' 20"
+
+echo "== 46. collega che rinomina un file mentre il Finder guarda la cartella"
+cat $M/46/originale.bin >/dev/null
+rcj vfs/mimus-states '{"dir":"46"}' >/dev/null
+mv $S/46/originale.bin $S/46/rinominato.bin; sleep 6
+ls $M/46 >/dev/null; rcj vfs/mimus-states '{"dir":"46"}' >/dev/null; rcj vfs/mimus-states '{"dir":"46"}' >/dev/null
+rcj vfs/mimus-orphans '{}' >/dev/null
+ok "la copia segue il nome nuovo" "cmp -s $T/cache/vfs/mimus/46/rinominato.bin $S/46/rinominato.bin"
+
+echo "== 47. disco del Mac pieno durante un salvataggio"
+MC=$T/mntC; mkdir -p $MC $T/small; mount -t tmpfs -o size=30m tmpfs $T/small
+($R mount mimusb: $MC --cache-dir $T/small --vfs-cache-mode full --vfs-write-back 2s --dir-cache-time 5s \
+    --contimeout 3s --rc --rc-addr 127.0.0.1:5577 --log-file $T/mountC.log --log-level INFO &)
+for i in $(seq 30); do mount | grep -q "on $MC " && break; sleep 0.5; done; sleep 1
+cat $MC/47/g.bin >/dev/null
+if head -c 40000000 /dev/urandom > $MC/47/g.bin 2>/dev/null; then echo "  (scrittura accettata)"; else echo "  (scrittura rifiutata: disco pieno)"; fi
+sleep 10
+ok "sul server resta il file buono, non uno troncato" "[ \"\$(cat $S/47/g.bin)\" = originale ]"
+ok "quello che è stato scritto è messo da parte" "find $T/small/recuperati -name g.bin -size +1M | grep -q ."
+pkill -f "^$R mount mimusb:"; sleep 2; fusermount -uz $MC 2>/dev/null; umount $T/small
+
+echo "== 48. copia cancellata a mano dalla cartella interna di MIMUS"
+cat $M/48/foto.jpg >/dev/null; sleep 1
+rm $T/cache/vfs/mimus/48/foto.jpg
+ok "il file si rilegge giusto (riscaricato, non pieno di zeri)" "cmp -s $M/48/foto.jpg $S/48/foto.jpg"
+stopm; startm
+ok "anche dopo un riavvio" "cmp -s $M/48/foto.jpg $S/48/foto.jpg"
 
 stopm; srv_off
 echo; echo "domande mostrate:"; sed 's/^/  /' $UI

@@ -1,5 +1,5 @@
 diff --git a/vfs/dir.go b/vfs/dir.go
-index 174b7d0..a7bb870 100644
+index 174b7d0..5a71aa9 100644
 --- a/vfs/dir.go
 +++ b/vfs/dir.go
 @@ -297,6 +297,23 @@ func (d *Dir) changeNotify(relativePath string, entryType fs.EntryType) {
@@ -41,6 +41,36 @@ index 174b7d0..a7bb870 100644
  			dir.entry = item
  			if dirTree != nil {
  				err = dir._readDirFromDirTree(dirTree, when)
+@@ -1055,6 +1078,9 @@ func (d *Dir) Create(name string, flags int) (*File, error) {
+ 	if d.vfs.Opt.ReadOnly {
+ 		return nil, EROFS
+ 	}
++	if mimusReservedName(name) { // MIMUS
++		return nil, mimusReservedErr(d, name)
++	}
+ 	if err = d.SetModTime(time.Now()); err != nil {
+ 		fs.Errorf(d, "Dir.Create failed to set modtime on parent dir: %v", err)
+ 		return nil, err
+@@ -1068,6 +1094,9 @@ func (d *Dir) Mkdir(name string) (*Dir, error) {
+ 	if d.vfs.Opt.ReadOnly {
+ 		return nil, EROFS
+ 	}
++	if mimusReservedName(name) { // MIMUS
++		return nil, mimusReservedErr(d, name)
++	}
+ 	path := path.Join(d.path, name)
+ 	node, err := d.stat(name)
+ 	switch err {
+@@ -1183,6 +1212,9 @@ func (d *Dir) Rename(oldName, newName string, destDir *Dir) error {
+ 	}
+ 	oldPath := path.Join(d.path, oldName)
+ 	newPath := path.Join(destDir.path, newName)
++	if mimusReservedName(newName) && !strings.EqualFold(oldName, newName) { // MIMUS
++		return mimusReservedErr(destDir, newName)
++	}
+ 	// fs.Debugf(oldPath, "Dir.Rename to %q", newPath)
+ 	oldNode, err := d.stat(oldName)
+ 	if err != nil {
 diff --git a/vfs/dir_test.go b/vfs/dir_test.go
 index 3d7ab8c..08334c8 100644
 --- a/vfs/dir_test.go

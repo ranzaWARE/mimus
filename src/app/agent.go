@@ -331,10 +331,47 @@ func journalCount(p paths) (queued, failed int) {
 	return count("journal.json"), count("journal-failed.json")
 }
 
+// dirtyOnDisk counts the files changed on this Mac and not yet uploaded,
+// from the cache metadata on disk: right also with the service stopped,
+// when the service cannot be asked
+func dirtyOnDisk(p paths) (n int) {
+	_ = filepath.Walk(filepath.Join(p.cache, "vfsMeta"), func(path string, fi os.FileInfo, err error) error {
+		if err != nil || fi.IsDir() {
+			return nil
+		}
+		var m struct{ Dirty bool }
+		data, rerr := os.ReadFile(path)
+		if rerr == nil && bytes.Contains(data, []byte(`"Dirty": true`)) && json.Unmarshal(data, &m) == nil && m.Dirty {
+			n++
+		}
+		return nil
+	})
+	return n
+}
+
+// recoveredDir: copies set aside after a crash or power loss, when their
+// details could not be read (they may hold changes never uploaded)
+func recoveredDir(p paths) string { return filepath.Join(p.cache, "recuperati") }
+
+func recoveredFiles(p paths) (n int) {
+	_ = filepath.Walk(recoveredDir(p), func(_ string, fi os.FileInfo, err error) error {
+		if err == nil && fi.Mode().IsRegular() {
+			n++
+		}
+		return nil
+	})
+	return n
+}
+
+// pendingChanges: what would be lost deleting or moving the local files
 func pendingChanges(p paths) int {
 	u := getUploadStats(p)
 	q, _ := journalCount(p)
-	return u.InProgress + u.Queued + q
+	up := u.InProgress + u.Queued
+	if d := dirtyOnDisk(p); d > up {
+		up = d
+	}
+	return up + q + recoveredFiles(p)
 }
 
 func serverReachable(host string) bool { return dialServer(host) == nil }

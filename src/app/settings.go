@@ -176,6 +176,22 @@ func applySettings(p paths, s *settings, orig settings, newPass string) paths {
 		return p
 	}
 
+	stopAgent(p) // smonta la cartella nella posizione vecchia
+	// changes saved while the questions were open: they belong to the old
+	// server and stay where they are
+	if critical {
+		if n := pendingChanges(p); n > 0 {
+			info(fmt.Sprintf("Nel frattempo sono state salvate %d modifiche non ancora caricate: server, cartella remota e posizione dei file restano quelli di prima.", n))
+			s.Host, s.Share, s.CacheDir = orig.Host, orig.Share, orig.CacheDir
+		}
+	}
+	restart := func() paths {
+		if err := startAgent(p); err != nil {
+			info(err.Error())
+		}
+		return p
+	}
+
 	// credentials and server
 	if s.Host != orig.Host || s.User != orig.User || s.Domain != orig.Domain || newPass != "" {
 		args := []string{"config", "update", "remoto", "host=" + s.Host, "user=" + s.User, "domain=" + s.Domain}
@@ -185,7 +201,7 @@ func applySettings(p paths, s *settings, orig settings, newPass string) paths {
 		if out, err := run(p.rclone, args...); err != nil {
 			info("Non riesco a salvare le credenziali:\n" + out)
 			*s = orig
-			return p
+			return restart()
 		}
 	}
 	if s.Host != orig.Host || s.Share != orig.Share || s.MinFreeGB != orig.MinFreeGB {
@@ -193,11 +209,9 @@ func applySettings(p paths, s *settings, orig settings, newPass string) paths {
 			"probe="+s.Host+":445", fmt.Sprintf("min_free=%dG", s.MinFreeGB)); err != nil {
 			info("Non riesco a salvare le impostazioni:\n" + out)
 			*s = orig
-			return p
+			return restart()
 		}
 	}
-
-	stopAgent(p) // smonta la cartella nella posizione vecchia
 
 	if s.CacheDir != orig.CacheDir {
 		msg, err := moveCache(orig.CacheDir, s.CacheDir)
@@ -256,10 +270,13 @@ func moveCache(from, to string) (string, error) {
 	if !errors.As(err, &le) || !errors.Is(le.Err, syscall.EXDEV) {
 		return "", err
 	}
-	// another disk: keep the folder listings, drop the cached copies
-	if err := copyDir(filepath.Join(from, "offline"), filepath.Join(to, "offline")); err != nil {
-		_ = os.RemoveAll(to)
-		return "", err
+	// another disk: keep the folder listings (and any copy recovered after
+	// a crash), drop the cached copies
+	for _, sub := range []string{"offline", "recuperati"} {
+		if err := copyDir(filepath.Join(from, sub), filepath.Join(to, sub)); err != nil {
+			_ = os.RemoveAll(to)
+			return "", err
+		}
 	}
 	_ = os.RemoveAll(from)
 	return "I file remoti che erano tenuti sul Mac verranno riscaricati quando li riapri (la nuova cartella è su un altro disco).", nil

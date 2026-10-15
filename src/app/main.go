@@ -350,6 +350,14 @@ func statusText(p paths, s settings, running bool) string {
 	if failed > 0 {
 		fmt.Fprintf(&b, "\n%d modifiche non applicate (vedi Ultimi errori)", failed)
 	}
+	if !running {
+		if d := dirtyOnDisk(p); d > 0 {
+			fmt.Fprintf(&b, "\n%d file modificati su questo Mac in attesa di caricamento", d)
+		}
+	}
+	if r := recoveredFiles(p); r > 0 {
+		fmt.Fprintf(&b, "\n%d file recuperati dopo un arresto improvviso: controllali in\n%s", r, recoveredDir(p))
+	}
 	return b.String()
 }
 
@@ -432,6 +440,9 @@ func reportMount(p paths) {
 func confirmPending(p paths, action string) bool {
 	u := getUploadStats(p)
 	n := u.InProgress + u.Queued
+	if d := dirtyOnDisk(p); d > n {
+		n = d
+	}
 	if n == 0 {
 		return true
 	}
@@ -547,7 +558,16 @@ func uninstall(p paths) bool {
 	setUpdater(p, false)
 	setMenuIcon(p, false)
 	removeFinderExtension(p)
-	if force || dialog("Cancellare anche i file remoti tenuti sul Mac, la configurazione e la password salvata?", "Tieni", "Tieni", "Cancella tutto") == "Cancella tutto" {
+	wipe := force || dialog("Cancellare anche i file remoti tenuti sul Mac, la configurazione e la password salvata?", "Tieni", "Tieni", "Cancella tutto") == "Cancella tutto"
+	// changes saved while the questions were open (the service was still
+	// running): same rule, they are deleted only writing OK
+	if wipe && !force {
+		if n := pendingChanges(p); n > 0 {
+			v, ok := input(fmt.Sprintf("Nel frattempo sono state salvate %d modifiche non ancora caricate sul server remoto: cancellando adesso andrebbero PERSE.\n\nPer cancellare lo stesso scrivi OK qui sotto; altrimenti i file restano su questo Mac e verranno caricati se reinstalli MIMUS.", n), "", false)
+			wipe = ok && strings.EqualFold(strings.TrimSpace(v), "OK")
+		}
+	}
+	if wipe {
 		_ = os.RemoveAll(p.cache) // anche se spostata fuori da Application Support
 		_ = os.RemoveAll(p.appSupport)
 		_, _ = run(p.rclone, "config", "delete", "mimus")

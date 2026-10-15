@@ -53,13 +53,11 @@ func (f *Fs) ResolveUploadConflict(ctx context.Context, name, baseFingerprint st
 	if curFingerprint == baseFingerprint {
 		return "", "", cur, nil
 	}
-	// a new local file over a remote file the Mac already knew, unchanged since
-	// (Finder "replace", or an app's safe-save): the user replaced it on purpose
-	if baseFingerprint == "" {
-		if e, ok := f.store.entry(name); ok && !e.IsDir && f.sameVersion(cur, e.Size, e.ModTime) {
-			return "", "", cur, nil
-		}
-	}
+	// a new local file where the remote has one: always asked. (A file put
+	// in place of one the Mac knew, as in a safe-save, carries that version
+	// as base and gets here only if it changed. The folder listing is not a
+	// safe reference: it may have been read again after the local save,
+	// already showing a colleague's version.)
 	const (
 		discard   = "Scarta la mia"
 		keepBoth  = "Tieni entrambe"
