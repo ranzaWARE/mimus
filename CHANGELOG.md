@@ -6,10 +6,10 @@ Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
 ## 1.6.1 — 2026-10-15
 
 - **File già sul Mac molto più veloci**: copiare o aprire un file col pallino
-  verde andava a circa 55 MB/s, come dal server. Il collegamento interno tra
-  Finder e MIMUS usava blocchi piccoli; ora usa blocchi da 1 MB e va a
-  170–600 MB/s (misurato su un Mac vero, file da 600 MB). Lo stesso vale per
-  le scritture.
+  verde andava a 55–70 MB/s, come dal server. Il collegamento interno tra
+  Finder e MIMUS usava blocchi piccoli; ora usa blocchi da 1 MB. Misurato su
+  un Mac vero con un file da 600 MB: lettura 150–300 MB/s, scrittura circa
+  190 MB/s (prima circa 47).
 - Verificato che leggere un file già sul Mac non lo riscarica dal server.
 
 ## 1.6.0 — 2026-10-15
