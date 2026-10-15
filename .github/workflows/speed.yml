@@ -1,0 +1,25 @@
+# Misura (su un Mac vero) la velocità di lettura dei file già sul Mac dalla
+# cartella collegata. Non blocca nulla: i risultati sono nelle annotazioni.
+name: speed
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - tests/speed-macos.sh
+      - .github/workflows/speed.yml
+permissions:
+  contents: read
+jobs:
+  speed:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: rclone-mimus
+        run: bash scripts/ci-run.sh rclone-mimus bash scripts/build-rclone.sh
+      - name: Velocità di lettura
+        run: bash tests/speed-macos.sh
