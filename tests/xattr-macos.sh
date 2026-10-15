@@ -48,7 +48,9 @@ variant(){ # nome argomenti...
     try "tag rosso su un file" xattr -w com.apple.metadata:_kMDItemUserTags "$TAG" "$M/file.txt"
     try "tag rosso su una cartella" xattr -w com.apple.metadata:_kMDItemUserTags "$TAG" "$M/cartella"
     try "rilettura del tag" xattr -p com.apple.metadata:_kMDItemUserTags "$M/file.txt"
+    local m0; m0=$(wc -l < "$LOG")
     try "file ._ scritto a mano" sh -c "echo x > '$M/._a mano'"
+    local tr2; tr2="$(tail -n +"$((m0 + 1))" "$LOG" | grep -E 'nfs: request|a mano' | head -n 12)"
     try "cp di un file scaricato" cp "$F" "$M/"
     try "contenuto copiato intero" sh -c "[ \"\$(cat '$M/scaricato.pdf')\" = pdf ]"
     try "ditto di un file scaricato" ditto "$F" "$M/scaricato-ditto.pdf"
@@ -62,6 +64,7 @@ variant(){ # nome argomenti...
         echo "mount: $(mount | grep " on $M ")"
         echo "--- sul server:"; ls -la "$S" | tail -n +2
         [ -n "$TRACE" ] && { echo "--- richieste NFS al primo errore:"; echo "$TRACE"; }
+        echo "--- richieste NFS per il file ._ a mano:"; echo "${tr2:-(nessuna)}"
     } > "$T/$name.txt"
     cat "$T/$name.txt"
     echo "::notice title=$name ($*)::$(enc < "$T/$name.txt")"
@@ -71,7 +74,8 @@ variant(){ # nome argomenti...
 
 if [ $# -eq 0 ]; then
     set -- servizio "--poll-interval 15s --option acdirmax=5 --option nonegnamecache" \
-        noappledouble "--poll-interval 15s --option acdirmax=5 --option nonegnamecache --option noappledouble"
+        nudo "" \
+        nonamedattr "--option nonamedattr"
 fi
 while [ $# -ge 2 ]; do
     # shellcheck disable=SC2086
