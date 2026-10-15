@@ -4,7 +4,8 @@
 # vero). Il "server" è una cartella locale modificata direttamente; un ciclo
 # con ls fa la parte del Finder con le cartelle aperte.
 #   bash tests/refresh-macos.sh [nome "argomenti rclone"]...
-# Senza argomenti confronta le impostazioni attuali con quelle nuove.
+# Senza argomenti confronta: la 1.5.0 (nessun controllo delle cartelle aperte),
+# il controllo ogni minuto (predefinito di rclone) e le impostazioni nuove.
 
 set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -56,7 +57,9 @@ measure(){ # nome argomenti...
 }
 
 if [ $# -eq 0 ]; then
-    set -- attuale "" nuova "--poll-interval 15s --option acdirmax=5 --option nonegnamecache"
+    set -- come-1.5.0 "--offline-watch-dirs 0" \
+        controllo-ogni-minuto "" \
+        nuova "--poll-interval 15s --option acdirmax=5 --option nonegnamecache"
 fi
 while [ $# -ge 2 ]; do
     # shellcheck disable=SC2086
