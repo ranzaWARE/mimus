@@ -69,6 +69,8 @@ type settings struct {
 	NoAutoUpdate  bool   `json:"no_auto_update"`  // non controllare da solo gli aggiornamenti
 	NoMenuIcon    bool   `json:"no_menu_icon"`    // niente icona nella barra dei menu
 	NoFinderMarks bool   `json:"no_finder_marks"` // niente pallini e menu nel Finder
+	FinderDSStore bool   `json:"finder_ds_store"` // viste del Finder (.DS_Store) salvate sul server
+	DSSetByMimus  bool   `json:"ds_set_by_mimus"` // DSDontWriteNetworkStores messo da MIMUS
 }
 
 // defaults fills the missing values

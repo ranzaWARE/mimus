@@ -1054,6 +1054,60 @@ index 56b9c46..e03441b 100644
  	fh.file.setSize(size)
  	return fh.item.Truncate(size)
  }
+diff --git a/vfs/vfscache/downloaders/downloaders.go b/vfs/vfscache/downloaders/downloaders.go
+index 87783fb..ba6a023 100644
+--- a/vfs/vfscache/downloaders/downloaders.go
++++ b/vfs/vfscache/downloaders/downloaders.go
+@@ -122,7 +122,7 @@ func New(item Item, opt *vfscommon.Options, remote string, src fs.Object) (dls *
+ 		select {
+ 		case <-ticker.C:
+ 			err := dls.kickWaiters()
+-			if err != nil {
++			if err != nil && !fserrors.IsNoRetryError(err) {
+ 				fs.Errorf(dls.src, "vfs cache: failed to kick waiters: %v", err)
+ 			}
+ 		case <-ctx.Done():
+@@ -156,6 +156,13 @@ func (dls *Downloaders) _countErrors(n int64, err error) {
+ 		dls.errorCount++
+ 		//}
+ 		dls.lastErr = err
++		// MIMUS: retrying cannot help (server offline, file changed on the
++		// server): give up at once, without a burst of retries in the log
++		if fserrors.IsNoRetryError(err) {
++			dls.errorCount = maxErrorCount + 1
++			fs.Debugf(dls.src, "vfs cache: downloader: %v", err)
++			return
++		}
+ 		fs.Infof(dls.src, "vfs cache: downloader: error count now %d: %v", dls.errorCount, err)
+ 	}
+ }
+@@ -195,11 +202,11 @@ func (dls *Downloaders) _newDownloader(r ranges.Range) (dl *downloader, err erro
+ 		n, err := dl.download()
+ 		_ = dl.close(err)
+ 		dl.dls.countErrors(n, err)
+-		if err != nil {
++		if err != nil && !fserrors.IsNoRetryError(err) {
+ 			fs.Errorf(dl.dls.src, "vfs cache: failed to download: %v", err)
+ 		}
+ 		err = dl.dls.kickWaiters()
+-		if err != nil {
++		if err != nil && !fserrors.IsNoRetryError(err) {
+ 			fs.Errorf(dl.dls.src, "vfs cache: failed to kick waiters: %v", err)
+ 		}
+ 	}()
+@@ -435,7 +442,11 @@ func (dls *Downloaders) kickWaiters() (err error) {
+ 	}
+ 
+ 	if dls.errorCount > maxErrorCount {
+-		fs.Errorf(dls.src, "vfs cache: too many errors %d/%d: last error: %v", dls.errorCount, maxErrorCount, dls.lastErr)
++		if fserrors.IsNoRetryError(dls.lastErr) {
++			fs.Infof(dls.src, "vfs cache: non scaricato: %v", dls.lastErr)
++		} else {
++			fs.Errorf(dls.src, "vfs cache: too many errors %d/%d: last error: %v", dls.errorCount, maxErrorCount, dls.lastErr)
++		}
+ 		dls._closeWaiters(dls.lastErr)
+ 		return dls.lastErr
+ 	}
 diff --git a/vfs/vfscache/mimus.go b/vfs/vfscache/mimus.go
 new file mode 100644
 index 0000000..a7ea217

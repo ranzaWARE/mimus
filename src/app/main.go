@@ -66,6 +66,7 @@ func main() {
 	setUpdater(p, !s.NoAutoUpdate)
 	setMenuIcon(p, !s.NoMenuIcon)
 	setFinderBadges(p, !s.NoFinderMarks)
+	setDSStore(p, &s, s.FinderDSStore)
 	if !offer && !s.NoAutoUpdate {
 		if r, ok := availableUpdate(5 * time.Second); ok && offerUpdate(p, r) {
 			return // the new version has been started
@@ -145,8 +146,6 @@ func configure(p paths, s *settings) (paths, bool) {
 		info("Non riesco a creare il servizio: " + err.Error())
 		return p, false
 	}
-	// no .DS_Store files on network volumes (from the next login)
-	_, _ = run("defaults", "write", "com.apple.desktopservices", "DSDontWriteNetworkStores", "-bool", "true")
 	if err := startAgent(p); err != nil {
 		info(err.Error())
 		return p, false
@@ -558,6 +557,7 @@ func uninstall(p paths) bool {
 	setUpdater(p, false)
 	setMenuIcon(p, false)
 	removeFinderExtension(p)
+	restoreDSStore(p)
 	wipe := force || dialog("Cancellare anche i file remoti tenuti sul Mac, la configurazione e la password salvata?", "Tieni", "Tieni", "Cancella tutto") == "Cancella tutto"
 	// changes saved while the questions were open (the service was still
 	// running): same rule, they are deleted only writing OK

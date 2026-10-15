@@ -537,6 +537,8 @@ td.icon {{ width: 64px; text-align: center; vertical-align: middle; }}
     <p>Nelle cartelle che stai guardando compaiono da soli entro pochi secondi (in VPN entro un minuto circa); nelle altre entro 5 minuti (modificabile nelle <a href="#impostazioni">Impostazioni</a>). Per vederli subito: <em>Aggiorna cartelle</em>, dall’icona in alto o dall’app.</p></details>
   <details><summary>Non riesco a mettere un tag colorato a un file</summary>
     <p>Nella cartella collegata macOS non permette i tag del Finder né gli altri «attributi estesi» dei file. Se il Finder chiede nome e password premi <strong>Annulla</strong>: non funziona con nessun utente, nemmeno amministratore. I file si copiano e si salvano normalmente; dal Terminale usa <code>cp -X</code> al posto di <code>cp</code>.</p></details>
+  <details><summary>File «.DS_Store» sul server</summary>
+    <p>Il Finder li usa per ricordare la vista di ogni cartella. MIMUS chiede a macOS di non scriverli sulle cartelle di rete (consiglio di Apple): non intasano il server né il registro di MIMUS. Vale dal successivo avvio del Finder (tasto Opzione + clic destro sull’icona del Finder nel Dock → <em>Riapri</em>) o dal prossimo accesso. Si può cambiare in <em>Impostazioni</em>.</p></details>
   <details><summary>Da fuori ufficio non si collega</summary>
     <p>Controlla che la VPN sia attiva. Senza VPN lavori offline con i file già sul Mac.</p></details>
   <details><summary>Un file non si apre offline</summary>

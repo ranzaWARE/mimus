@@ -233,7 +233,7 @@ index 0ffa30c..70af984 100644
  
  	c.mu.Lock()
 diff --git a/vfs/vfscache/item.go b/vfs/vfscache/item.go
-index 66adc9b..17e68d3 100644
+index 66adc9b..0f615f9 100644
 --- a/vfs/vfscache/item.go
 +++ b/vfs/vfscache/item.go
 @@ -7,10 +7,12 @@ import (
@@ -472,7 +472,17 @@ index 66adc9b..17e68d3 100644
  		unlockMutexForCall(&item.mu, func() {
  			o, err = operations.Copy(ctx, item.c.fremote, o, name, cacheObj)
  		})
-@@ -1323,6 +1479,12 @@ func (item *Item) WriteAt(b []byte, off int64) (n int, err error) {
+@@ -1253,6 +1409,9 @@ func (item *Item) ReadAt(b []byte, off int64) (n int, err error) {
+ 		if err == nil || err == io.EOF {
+ 			break
+ 		}
++		if fserrors.IsNoRetryError(err) { // MIMUS: offline, already said once
++			break
++		}
+ 		fs.Errorf(item.name, "vfs cache: failed to _ensure cache %v", err)
+ 		if !fserrors.IsErrNoSpace(err) && err.Error() != "no space left on device" {
+ 			fs.Debugf(item.name, "vfs cache: failed to _ensure cache %v is not out of space", err)
+@@ -1323,6 +1482,12 @@ func (item *Item) WriteAt(b []byte, off int64) (n int, err error) {
  	if n > 0 {
  		item._dirty()
  	}
@@ -485,7 +495,7 @@ index 66adc9b..17e68d3 100644
  	end := off + int64(n)
  	// Writing off the end of the file so need to make some
  	// zeroes.  we do this by showing that we have written to the
-@@ -1409,7 +1571,7 @@ func (item *Item) Sync() (err error) {
+@@ -1409,7 +1574,7 @@ func (item *Item) Sync() (err error) {
  	if err != nil {
  		return fmt.Errorf("vfs cache item sync: failed to sync file: %w", err)
  	}

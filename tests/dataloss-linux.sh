@@ -71,7 +71,7 @@ versions(){ cat "$S/$1" "$S/$(dirname "$1")/"*conflitto* 2>/dev/null; }
 srv_on
 $R config create remoto smb host=127.0.0.1 user=smbtest pass=Passw0rd idle_timeout=2s --obscure >/dev/null
 $R config create mimus offline remote=remoto:Tecnico probe=127.0.0.1:445 ui=$T/ui.sh ask_timeout=20s >/dev/null
-for n in $(seq 48); do mkdir -p $S/$n; done
+for n in $(seq 49); do mkdir -p $S/$n; done
 echo "v1" > $S/1/a.txt
 head -c 20000000 /dev/urandom > $T/grande.bin; echo "piccolo originale" > $S/2/g.bin; echo "piccolo originale" > $S/3/g.bin
 echo "base" > $S/4/a.txt; echo "base" > $S/5/a.txt
@@ -102,6 +102,7 @@ for i in $(seq 30); do echo "copia $i" > $S/45/f$i.txt; done
 head -c 100000 /dev/urandom > $S/46/originale.bin
 echo "originale" > $S/47/g.bin
 head -c 3000000 /dev/urandom > $S/48/foto.jpg
+echo "solo sul server" > $S/49/x.txt
 WB=2s startm
 ls -R $M >/dev/null; for f in 1/a.txt 4/a.txt 5/a.txt 7/A.txt 8/D/x.txt 9/X.txt 10/A.txt 11/D/x.txt 12/Caso.txt \
     17/Doc.txt 22/a.txt 22/b.txt 23/a.txt 24/a.txt 26/A.txt 29/a.txt 31/a.txt 33/D/x.txt 34/D/x.txt; do cat "$M/$f" >/dev/null; done
@@ -461,6 +462,13 @@ rm $T/cache/vfs/mimus/48/foto.jpg
 ok "il file si rilegge giusto (riscaricato, non pieno di zeri)" "cmp -s $M/48/foto.jpg $S/48/foto.jpg"
 stopm; startm
 ok "anche dopo un riavvio" "cmp -s $M/48/foto.jpg $S/48/foto.jpg"
+
+echo "== 49. offline: il Finder prova più volte a leggere e scrivere un file che non è sul Mac"
+ls $M/49 >/dev/null; srv_off
+for i in 1 2 3; do cat $M/49/x.txt >/dev/null 2>&1; (echo x >> $M/49/x.txt) 2>/dev/null; done
+ok "nessuna raffica di tentativi nel log" "[ \$(grep -c '49/x.txt' $T/mount.log) -le 12 ] && ! grep '49/x.txt' $T/mount.log | grep -q 'error count now'"
+srv_on
+ok "il file sul server è intatto" "[ \"\$(cat $S/49/x.txt)\" = 'solo sul server' ]"
 
 stopm; srv_off
 echo; echo "domande mostrate:"; sed 's/^/  /' $UI

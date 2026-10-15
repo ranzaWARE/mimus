@@ -3,6 +3,17 @@
 Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
 `rclone-mimus version` (es. `v1.72.0-mimus-1.0.0`).
 
+## 1.7.1 — 2026-10-15
+
+- **Registro più pulito offline**: aprire o modificare un file che non è sul
+  Mac senza rete produceva una raffica di righe (11 tentativi di download a
+  ogni accesso del Finder, tipico con i .DS_Store). Ora MIMUS rinuncia
+  subito, con una sola riga.
+- **.DS_Store**: l'impostazione di macOS che li tiene lontani dalle cartelle
+  di rete ora è in *Impostazioni* («Viste del Finder salvate sul server»),
+  viene controllata a ogni avvio e alla disinstallazione si rimette com'era.
+  Ricordato nella guida che vale dal successivo avvio del Finder.
+
 ## 1.7.0 — 2026-10-15
 
 Secondo giro contro la perdita di dati, partendo dai problemi noti di

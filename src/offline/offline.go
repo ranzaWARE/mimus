@@ -35,6 +35,7 @@ import (
 	"github.com/rclone/rclone/fs/config"
 	"github.com/rclone/rclone/fs/config/configmap"
 	"github.com/rclone/rclone/fs/config/configstruct"
+	"github.com/rclone/rclone/fs/fserrors"
 	"github.com/rclone/rclone/fs/fspath"
 	"github.com/rclone/rclone/fs/hash"
 )
@@ -729,6 +730,10 @@ func (o *Object) Open(ctx context.Context, options ...fs.OpenOption) (io.ReadClo
 	size, mt := o.version()
 	hadBase := o.hasBase()
 	b, err := o.resolve(ctx)
+	if errors.Is(err, errOffline) {
+		// retrying now cannot help: the cache gives up at once (and quietly)
+		return nil, fserrors.NoRetryError(err)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -741,7 +746,7 @@ func (o *Object) Open(ctx context.Context, options ...fs.OpenOption) (io.ReadClo
 	}
 	if !o.f.sameVersion(cur, size, mt) {
 		fs.Infof(o.f, "%q è cambiato sul server remoto mentre lo leggevo: non mescolo le due versioni", o.remote)
-		return nil, errChanged
+		return nil, fserrors.NoRetryError(errChanged)
 	}
 	rc, err := b.Open(ctx, options...)
 	if err != nil {

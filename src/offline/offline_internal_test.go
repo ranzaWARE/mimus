@@ -2,6 +2,7 @@ package offline
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -508,7 +509,7 @@ func TestOpenOnlyKnownVersion(t *testing.T) {
 	must(t, os.WriteFile(p, []byte("versione due, più lunga"), 0o644))
 	setOnline(true)
 	for name, obj := range map[string]fs.Object{"listed": o, "offline": ghost} {
-		if _, err := obj.Open(ctx); err != errChanged {
+		if _, err := obj.Open(ctx); !errors.Is(err, errChanged) {
 			t.Errorf("%s: changed file opened: %v", name, err)
 		}
 	}
