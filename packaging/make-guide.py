@@ -122,6 +122,55 @@ def finder_window():
             '<text x="340" y="196" font-size="12.5" text-anchor="middle" fill="var(--muted)">La cartella «Tecnico» nella tua cartella Inizio</text>')
     return window(560, 240, "Inizio", body)
 
+def badge_svg(kind, x=0, y=0, size=22):
+    """pallino come quelli dell'estensione del Finder"""
+    k = size / 64
+    g = f'<g transform="translate({x},{y}) scale({k})"><circle cx="32" cy="32" r="30" fill="#fff"/>'
+    if kind == "remote":
+        g += '<circle cx="32" cy="32" r="21.5" fill="none" stroke="#8e8e93" stroke-width="9"/>'
+    else:
+        g += f'<circle cx="32" cy="32" r="26" fill="{"#ff9500" if kind == "upload" else "#34c759"}"/>'
+    if kind == "pinned":
+        g += '<path d="M19 31 L28 41 L45 22" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>'
+    if kind == "upload":
+        g += '<path d="M32 46 L32 18 M21 29 L32 18 L43 29" fill="none" stroke="#fff" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>'
+    return g + "</g>"
+
+def badge_inline(kind, label):
+    return f'<svg class="badge" viewBox="0 0 22 22" role="img" aria-label="{E(label)}">{badge_svg(kind)}</svg>'
+
+def doc_icon(x, y, kind, name):
+    g = (f'<g transform="translate({x},{y})">'
+         f'<path d="M0 0 h26 l10 10 v36 h-36z" fill="var(--paper)" stroke="var(--line)"/>'
+         f'<path d="M26 0 v10 h10" fill="none" stroke="var(--line)"/>')
+    if kind:
+        g += badge_svg(kind, -6, 30, 18)
+    return g + f'<text x="18" y="64" font-size="11.5" text-anchor="middle" fill="var(--ink)">{E(name)}</text></g>'
+
+def finder_menu():
+    w, h = 560, 292
+    body = (doc_icon(40, 60, "remote", "Offerta.docx") + doc_icon(130, 60, "local", "Tavola.dwg")
+            + doc_icon(220, 60, "pinned", "Listino.xlsx") + doc_icon(310, 60, "upload", "Note.txt"))
+    body += '<rect x="126" y="54" width="44" height="78" rx="6" fill="var(--accent)" opacity=".15"/>'
+    items = [("Apri", ""), None, ("Scarica ora su questo Mac", ""), ("Mantieni sempre su questo Mac", ""),
+             ("Togli da questo Mac (resta sul server)", ""), None, ("Rinomina", "muted")]
+    mx, my, mw = 150, 140, 300
+    mh = 10 + sum(9 if it is None else 22 for it in items)
+    body += f'<rect x="{mx}" y="{my}" width="{mw}" height="{mh}" rx="9" fill="var(--paper)" stroke="var(--line)"/>'
+    y = my + 6
+    for it in items:
+        if it is None:
+            body += f'<line x1="{mx+10}" y1="{y+4.5}" x2="{mx+mw-10}" y2="{y+4.5}" stroke="var(--line)"/>'
+            y += 9
+            continue
+        label, kind = it
+        hl = label.startswith("Mantieni")
+        if hl:
+            body += f'<rect x="{mx+5}" y="{y}" width="{mw-10}" height="22" rx="5" fill="var(--accent)"/>'
+        body += f'<text x="{mx+16}" y="{y+15.5}" font-size="12.5" fill="{"#fff" if hl else ("var(--muted)" if kind else "var(--ink)")}">{E(label)}</text>'
+        y += 22
+    return window(w, h, "Commesse", body)
+
 def menubar_menu():
     w, h = 560, 212
     ix, iy = 290, 5
@@ -166,6 +215,7 @@ FIG = {
     "done": dialog(["Fatto: la cartella è collegata e si ricollegherà", "da sola a ogni accensione."], ["OK", "Apri cartella"]),
     "finder": finder_window(),
     "menubar": menubar_menu(),
+    "findermenu": finder_menu(),
     "menu": choose_list(["Stato: attivo – cartella collegata", "2 modifiche fatte offline in attesa"],
                         ["Apri cartella", "Aggiorna cartelle", "Stato dettagliato", "Riavvia collegamento",
                          "Ferma collegamento", "Ultimi errori", "Apri log", "Log dettagliato (diagnosi) on/off",
@@ -270,6 +320,7 @@ footer {{ color: var(--muted); font-size: 13px; text-align: center; padding: 0 0
 @keyframes mbf {{ 0% {{ opacity: 1; }} 25% {{ opacity: 0; }} 100% {{ opacity: 0; }} }}
 @media (prefers-reduced-motion: reduce) {{ .mb.a i {{ animation: none; }} .mb.a i:first-child {{ opacity: 1; }} }}
 td.icon {{ width: 64px; text-align: center; vertical-align: middle; }}
+.badge {{ width: 22px; height: 22px; vertical-align: middle; }}
 @media (max-width: 600px) {{
   .hero {{ flex-direction: column; align-items: flex-start; }} h1 {{ font-size: 28px; }}
   section {{ padding: 20px 16px; }} ol.steps > li {{ padding-left: 40px; }}
@@ -289,7 +340,7 @@ td.icon {{ width: 64px; text-align: center; vertical-align: middle; }}
     </div>
   </div>
   <nav>
-    <a href="#installa">Installazione</a><a href="#primo">Primo avvio</a><a href="#uso">Uso quotidiano</a><a href="#barra">Icona in alto</a>
+    <a href="#installa">Installazione</a><a href="#primo">Primo avvio</a><a href="#uso">Uso quotidiano</a><a href="#barra">Icona in alto</a><a href="#sulmac">Sul Mac o sul server</a>
     <a href="#offline">Lavorare offline</a><a href="#popup">I messaggi</a><a href="#menu">Il menu</a><a href="#impostazioni">Impostazioni</a>
     <a href="#aggiorna">Aggiornare e disinstallare</a><a href="#problemi">Problemi</a><a href="#it">Per l’IT</a>
   </nav>
@@ -355,6 +406,28 @@ td.icon {{ width: 64px; text-align: center; vertical-align: middle; }}
   {fig("menubar", "Cliccando l’icona: lo stato in parole e i comandi più usati.")}
   <p><em>Apri MIMUS…</em> porta al <a href="#menu">menu completo</a> dell’app. <em>Nascondi l’icona</em> la toglie finché non riapri MIMUS (o fino al prossimo accesso); per toglierla sempre: <a href="#impostazioni">Impostazioni</a> → <em>Icona nella barra dei menu: no</em>.</p>
   <div class="note">Non la vedi? Sui Mac con la fotocamera nello schermo le icone in eccesso restano nascoste dietro la tacca: tieni premuto <strong>⌘</strong> e trascina via qualche altra icona per fare spazio (con ⌘ puoi anche spostare quella di MIMUS). Sulle versioni recenti di macOS controlla anche Impostazioni di Sistema → <strong>Barra dei menu</strong>, che MIMUS sia consentita.</div>
+</section>
+
+<section id="sulmac">
+  <h2>Sul Mac o solo sul server</h2>
+  <p>Nella cartella collegata ogni file ha un pallino che dice dove si trova:</p>
+  <table>
+    <tr><th class="icon">Pallino</th><th>Cosa vuol dire</th></tr>
+    <tr><td class="icon">{badge_inline("remote", "cerchio grigio")}</td><td><strong>Solo sul server remoto.</strong> Si scarica da solo quando lo apri (serve la rete).</td></tr>
+    <tr><td class="icon">{badge_inline("local", "pallino verde")}</td><td><strong>Su questo Mac.</strong> Si apre anche offline. Se non lo usi per un po’ (30 giorni, modificabile) viene tolto dal Mac, ma solo se è al sicuro sul server.</td></tr>
+    <tr><td class="icon">{badge_inline("pinned", "pallino verde con spunta")}</td><td><strong>Sempre su questo Mac.</strong> Non viene mai tolto; se è una cartella, anche i file nuovi messi dai colleghi vengono scaricati da soli.</td></tr>
+    <tr><td class="icon">{badge_inline("upload", "pallino arancione con freccia")}</td><td><strong>Da caricare sul server remoto.</strong> L’hai modificato qui; parte da solo appena il server è raggiungibile.</td></tr>
+  </table>
+  <h3>Scaricare, tenere, liberare spazio</h3>
+  <p>Tasto destro su file o cartelle (anche più di uno):</p>
+  {fig("findermenu", "Il menu del tasto destro nella cartella collegata.")}
+  <table>
+    <tr><th>Voce</th><th>Cosa fa</th></tr>
+    <tr><td>Scarica ora su questo Mac</td><td>scarica subito (una cartella con tutto quello che contiene): utile prima di partire senza rete</td></tr>
+    <tr><td>Mantieni sempre su questo Mac</td><td>scarica e non toglie mai; per le cartelle vale anche per i file aggiunti dopo. Per smettere: <em>Non mantenere più sempre su questo Mac</em> (la copia resta finché non serve spazio)</td></tr>
+    <tr><td>Togli da questo Mac (resta sul server)</td><td>libera spazio: toglie la copia dal Mac, il file resta sul server. Non tocca i file con modifiche ancora da caricare né quelli aperti</td></tr>
+  </table>
+  <div class="note">I pallini e il menu sono un’estensione del Finder: MIMUS la attiva da sola. Se non li vedi: Impostazioni di Sistema → Generali → <strong>Elementi login ed estensioni</strong> → Estensioni → <strong>Finder</strong> (o «Aggiunte») → attiva MIMUS. Si possono spegnere da <a href="#impostazioni">Impostazioni</a> → <em>Pallini e menu nel Finder</em>.</div>
 </section>
 
 <section id="offline">
@@ -430,6 +503,7 @@ td.icon {{ width: 64px; text-align: center; vertical-align: middle; }}
     <tr><td>Spazio minimo libero</td><td>quanti GB lasciare sempre liberi sul disco</td></tr>
     <tr><td>Aggiornamenti automatici di MIMUS</td><td>sì/no: controllo giornaliero delle nuove versioni</td></tr>
     <tr><td>Icona nella barra dei menu</td><td>sì/no: il dinosauro in alto a destra (vedi <a href="#barra">sopra</a>)</td></tr>
+    <tr><td>Pallini e menu nel Finder</td><td>sì/no: i pallini «sul Mac / solo sul server» e il menu del tasto destro (vedi <a href="#sulmac">sopra</a>)</td></tr>
     <tr><td>Novità dei colleghi visibili entro</td><td>ogni quanti minuti controllare le modifiche fatte da altri nelle cartelle che non stai guardando (valori bassi = più richieste al server remoto); quelle aperte di recente si aggiornano da sole in pochi secondi</td></tr>
   </table>
   <div class="note">Server, cartella condivisa e posizione dei file si possono cambiare solo quando non ci sono modifiche in attesa di essere caricate: altrimenti l’app te lo dice e salva solo le altre impostazioni.
@@ -442,7 +516,8 @@ td.icon {{ width: 64px; text-align: center; vertical-align: middle; }}
   <p>MIMUS controlla da sola se c’è una versione nuova (quando la apri e una volta al giorno). Se c’è ti mostra le novità: premi <strong>Aggiorna</strong> e fa tutto lei: scarica, verifica che il file sia integro, sostituisce l’app e riavvia il collegamento. Configurazione, file sul Mac e modifiche in attesa restano.</p>
   <p>Puoi controllare anche a mano (menu → <em>Controlla aggiornamenti</em>) o disattivare il controllo automatico in <a href="#impostazioni">Impostazioni</a>. In alternativa scarica il DMG dalla pagina del progetto su GitHub, trascina l’app in Applicazioni scegliendo <strong>Sostituisci</strong> e aprila una volta.</p>
   <h3>Disinstallare</h3>
-  <p>App → <em>Disinstalla</em>. Se ci sono modifiche non ancora caricate sul server remoto l’app si rifiuta, per non perderle: collegati al server remoto e riprova. Alla fine trascina l’app dalla cartella Applicazioni nel Cestino.</p>
+  <p>App → <em>Disinstalla</em>. Alla fine trascina l’app dalla cartella Applicazioni nel Cestino.</p>
+  <div class="warn">Se ci sono modifiche non ancora caricate sul server remoto, l’app lo dice: la cosa giusta è collegarsi al server, aspettare che finiscano e riprovare. Se vuoi disinstallare lo stesso, devi scrivere <strong>OK</strong>: accetti di <strong>perdere quelle modifiche</strong> e MIMUS cancella dal Mac tutti i suoi file (copie dei file remoti, coda, impostazioni, password salvata). Sul server non viene cancellato niente.</div>
 </section>
 
 <section id="problemi">
@@ -462,7 +537,7 @@ td.icon {{ width: 64px; text-align: center; vertical-align: middle; }}
   <details><summary>Da fuori ufficio non si collega</summary>
     <p>Controlla che la VPN sia attiva. Senza VPN lavori offline con i file già sul Mac.</p></details>
   <details><summary>Un file non si apre offline</summary>
-    <p>Non era mai stato aperto su questo Mac (o era stato tolto perché non usato da 30 giorni): si potrà aprire quando torni in rete.</p></details>
+    <p>Ha il cerchio grigio: non era mai stato aperto su questo Mac (o era stato tolto perché non usato da 30 giorni) e si potrà aprire quando torni in rete. Prima di partire usa <a href="#sulmac">Scarica ora</a> o <em>Mantieni sempre su questo Mac</em> sulle cartelle che ti servono.</p></details>
   <details><summary>Trovo file con «conflitto Mac» nel nome</summary>
     <p>Sono le tue versioni salvate in un conflitto (vedi <a href="#popup">messaggi</a>). Confrontale con l’originale e cancella quella che non serve.</p></details>
 </section>
@@ -474,6 +549,8 @@ td.icon {{ width: 64px; text-align: center; vertical-align: middle; }}
     <tr><td>App (contiene anche rclone-mimus)</td><td><code>/Applications/MIMUS.app</code></td></tr>
     <tr><td>Avvio automatico</td><td><code>~/Library/LaunchAgents/app.mimus.agent.plist</code> (scritto dall’app)</td></tr>
     <tr><td>Controllo aggiornamenti</td><td><code>~/Library/LaunchAgents/app.mimus.update.plist</code>, una volta al giorno; legge le Release di <code>github.com/ranzaWARE/mimus</code></td></tr>
+    <tr><td>Estensione del Finder (pallini e menu)</td><td><code>MIMUS.app/Contents/PlugIns/MIMUS Finder.appex</code> (sandbox), attivata con <code>pluginkit</code>; usa il servizio su <code>127.0.0.1:5572</code> (rc <code>vfs/mimus-states</code>, <code>-download</code>, <code>-pin</code>, <code>-evict</code>)</td></tr>
+    <tr><td>File e cartelle da tenere sempre sul Mac</td><td><code>…/cache/offline/mimus/*/pinned.json</code></td></tr>
     <tr><td>Icona nella barra dei menu</td><td><code>MIMUS.app/Contents/Library/LoginItems/MIMUS Menu.app</code>, avviata da <code>~/Library/LaunchAgents/app.mimus.menu.plist</code>; legge lo stato dal servizio su <code>127.0.0.1:5572</code> (rc <code>mimus/status</code>)</td></tr>
     <tr><td>Impostazioni (<code>settings.json</code>)</td><td><code>~/Library/Application Support/MIMUS/</code></td></tr>
     <tr><td>Cache e coda offline</td><td><code>~/Library/Application Support/MIMUS/cache</code> o la posizione scelta nelle Impostazioni</td></tr>

@@ -150,6 +150,7 @@ final class FinderSync: FIFinderSync {
         if mp == root { return }
         root = mp
         shown.removeAll()
+        NSLog("MIMUS Finder: cartella collegata %@", mp)
         let url = URL(fileURLWithPath: mp, isDirectory: true)
         DispatchQueue.main.async {
             FIFinderSyncController.default().directoryURLs = [url]
