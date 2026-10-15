@@ -1,0 +1,34 @@
+# L'app completa su un Mac vero con un server Samba vero: configurazione,
+# launchd, riavvio, crash del servizio, offline, disinstallazione.
+name: app-macos
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - tests/app-macos.sh
+      - tests/finder-macos.sh
+      - .github/workflows/app-macos.yml
+permissions:
+  contents: read
+jobs:
+  app:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Samba
+        run: brew install samba >/dev/null
+      - name: rclone-mimus
+        run: bash scripts/ci-run.sh rclone-mimus bash scripts/build-rclone.sh
+      - name: App
+        env:
+          REQUIRE_MENU: '1'
+        run: bash scripts/ci-run.sh app bash scripts/build-mac-app.sh
+      - name: Estensione del Finder (anche dopo il riavvio del collegamento)
+        run: bash tests/finder-macos.sh
+      - name: L'app completa
+        run: bash scripts/ci-run.sh app-macos bash tests/app-macos.sh

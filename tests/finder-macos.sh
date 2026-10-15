@@ -69,6 +69,7 @@ case "$LOGS" in *"locale.txt=local"*) echo "  OK   pallini messi dal Finder";;
 
 # «Riavvia collegamento»: la cartella viene smontata e rimontata; i pallini
 # devono tornare (l'estensione se ne accorge e li rimanda)
+P1="$(pgrep -f MIMUSFinder | tr '\n' ' ')"
 kill $PID 2>/dev/null; wait $PID 2>/dev/null
 mount | grep -q " on $M " && { umount -f "$M" 2>/dev/null || diskutil unmount force "$M" >/dev/null; }
 sleep 3
@@ -79,8 +80,9 @@ for _ in $(seq 60); do mount | grep -q " on $M " && break; sleep 0.5; done
 open "$M"; sleep 15
 FL="$HOME/Library/Containers/app.mimus.finder/Data/tmp/mimus-finder.log"
 AFTER="$(sed -n '/collegamento ripartito/,$p' "$FL" 2>/dev/null | tail -n 8)"
+P2="$(pgrep -f MIMUSFinder | tr '\n' ' ')"
 echo "dopo il riavvio:"; echo "$AFTER"
-echo "::notice title=pallini dopo il riavvio del collegamento::$(echo "${AFTER:-nessun messaggio}" | enc)"
+echo "::notice title=pallini dopo il riavvio del collegamento::estensione prima: $P1 dopo: $P2%0A$(tail -n 14 "$FL" 2>&1 | enc)"
 case "$AFTER" in *"collegamento ripartito"*"locale.txt=local"*) echo "  OK   pallini rimessi dopo il riavvio";;
     *) echo "::warning title=finder::pallini non rimessi dopo il riavvio del collegamento";; esac
 exit $FAILS
