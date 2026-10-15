@@ -15,6 +15,8 @@ let pollSeconds = 2.0
 let runFrames = ["run-0", "run-1", "run-2", "run-3"]
 let sleepFrames = ["sleep-0", "sleep-1", "sleep-2", "sleep-2"]
 let allFrames = runFrames + ["sleep-0", "sleep-1", "sleep-2", "alert"]
+// MIMUS_MENU_DEBUG=1: scrive su stderr ogni cambio di stato (per i test)
+let debug = ProcessInfo.processInfo.environment["MIMUS_MENU_DEBUG"] != nil
 
 func num(_ v: Any?) -> Int { return (v as? NSNumber)?.intValue ?? 0 }
 func flag(_ v: Any?) -> Bool { return (v as? NSNumber)?.boolValue ?? false }
@@ -165,6 +167,7 @@ final class MenuController: NSObject, NSApplicationDelegate {
     var openItem: NSMenuItem!
     var refreshItem: NSMenuItem!
     var lastLines: [String] = []
+    var lastLog = ""
 
     var mountPath = NSHomeDirectory() + "/MIMUS"
     var downSince: Date? = Date()
@@ -259,6 +262,14 @@ final class MenuController: NSObject, NSApplicationDelegate {
     func setTitle(_ title: String, _ lines: [String]) {
         titleItem.title = "MIMUS – " + title
         item.button?.toolTip = ([titleItem.title] + lines).joined(separator: "\n")
+        if debug {
+            let m = mode.map { "\($0)" } ?? "-"
+            let line = "stato: \(m) | \(title) | \(lines.joined(separator: " / "))\n"
+            if line != lastLog {
+                lastLog = line
+                FileHandle.standardError.write(line.data(using: .utf8) ?? Data())
+            }
+        }
         if lines == lastLines { return }
         lastLines = lines
         for d in detailItems { menu.removeItem(d) }

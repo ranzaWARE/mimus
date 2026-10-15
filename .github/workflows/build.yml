@@ -26,15 +26,7 @@ jobs:
           REQUIRE_MENU: '1'
         run: bash scripts/build-mac-app.sh
       - name: Prova dell'icona nella barra dei menu
-        continue-on-error: true
-        run: |
-          H="build/MIMUS.app/Contents/Library/LoginItems/MIMUS Menu.app/Contents/MacOS/MIMUSMenu"
-          "$H" > build/menubar-ci.log 2>&1 &
-          PID=$!
-          sleep 8
-          if kill -0 $PID 2>/dev/null; then echo "::notice title=menu::icona avviata"; else echo "::warning title=menu::l'icona si è chiusa: $(tail -c 300 build/menubar-ci.log | tr '\n' ' ')"; fi
-          screencapture -x build/menubar-ci.png || true
-          kill $PID 2>/dev/null || true
+        run: bash tests/menubar-macos.sh
       - name: Prova dell'aggiornamento automatico
         run: bash tests/update-macos.sh
       - uses: actions/upload-artifact@v4
@@ -43,7 +35,6 @@ jobs:
           path: |
             dist/*.dmg
             dist/*.sha256
-            build/menubar-ci.png
       - name: Versione da pubblicare?
         id: rel
         env:

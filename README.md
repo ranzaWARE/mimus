@@ -85,6 +85,7 @@ Diagnostica da Terminale: `bash scripts/status.sh`.
 | `scripts/build-mac-app.sh` | app universale (Apple Silicon + Intel), firma ad-hoc, DMG; l'icona della barra si compila solo su macOS |
 | `tests/e2e-linux.sh` | test end-to-end del modulo con Samba e FUSE |
 | `tests/app-smoke-linux.sh` | test dell'app: configurazione, aggiornamento, disinstallazione |
+| `tests/menubar-macos.sh` | prova degli stati dell'icona nella barra dei menu con un finto servizio (macOS, nella CI) |
 | `tests/update-macos.sh` | prova dell'aggiornamento automatico da un finto GitHub (macOS, nella CI) |
 | `.github/workflows/build.yml` | a ogni push compila, testa e produce il DMG; pubblica le versioni nuove |
 
