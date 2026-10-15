@@ -91,7 +91,10 @@ sleep 25
 if mount | grep -q " on $M " && perl -e 'alarm 5; exec @ARGV' cat "$M/locale.txt" >/dev/null 2>&1; then echo "  OK   ancora collegata dopo 40 secondi"
 else echo "::error title=finder::la cartella si è scollegata dopo il riavvio"; FAILS=$((FAILS + 1)); fi
 # servizio fermato per sempre: la cartella non deve restare appesa
-kill $PID 2>/dev/null; wait $PID 2>/dev/null; sleep 40
-if ! mount | grep -q " on $M "; then echo "  OK   servizio fermato: cartella scollegata da sola"
-else echo "::error title=finder::servizio fermato ma la cartella resta collegata (morta)"; FAILS=$((FAILS + 1)); fi
+kill $PID 2>/dev/null; wait $PID 2>/dev/null
+gone=0; for _ in $(seq 75); do mount | grep -q " on $M " || { gone=1; break; }; sleep 1; done
+SCL="$(cat "${TMPDIR:-/tmp}/mimus-scollega.log" /tmp/mimus-scollega.log 2>/dev/null | tail -n 12)"
+if [ $gone = 1 ]; then echo "  OK   servizio fermato: cartella scollegata da sola"
+else echo "::error title=finder::servizio fermato ma la cartella resta collegata (morta): $(echo "$SCL" | enc)"; FAILS=$((FAILS + 1)); fi
+echo "::notice title=controllo dopo l'arresto::$(echo "${SCL:-nessun registro}" | enc)"
 exit $FAILS

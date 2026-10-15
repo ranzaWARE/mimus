@@ -92,7 +92,7 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
  		} else if shutdownErr != nil {
  			return fmt.Errorf("failed to shutdown NFS server: %e", shutdownErr)
  		}
-@@ -114,3 +148,112 @@
+@@ -114,3 +148,121 @@
  
  	return
  }
@@ -192,11 +192,20 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
 +	if host == "" {
 +		host = "127.0.0.1"
 +	}
-+	script := `sleep 30
-+if ! nc -z "$2" "$3" >/dev/null 2>&1; then
-+  diskutil unmount force "$1" >/dev/null 2>&1 || umount -f "$1" >/dev/null 2>&1
-+fi`
-+	cmd := exec.Command("/bin/sh", "-c", script, "sh", mountpoint, host, port)
++	script := `exec >>"$4" 2>&1
++echo "$(date) servizio fermato: controllo tra 30 s"
++sleep 30
++if nc -z "$2" "$3"; then
++  echo "$(date) servizio ripartito: la cartella resta collegata"
++  exit 0
++fi
++for i in 1 2 3; do
++  diskutil unmount force "$1" && exit 0
++  umount -f "$1" && exit 0
++  sleep 2
++done`
++	logFile := filepath.Join(os.TempDir(), "mimus-scollega.log")
++	cmd := exec.Command("/bin/sh", "-c", script, "sh", mountpoint, host, port, logFile)
 +	cmd.Env = append(os.Environ(), "PATH=/usr/sbin:/usr/bin:/sbin:/bin")
 +	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 +	if err := cmd.Start(); err != nil {
