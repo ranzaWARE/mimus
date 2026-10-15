@@ -55,7 +55,9 @@ case "$ST" in *'"name":"locale.txt","state":"local"'*'"name":"remoto.txt","state
 START="$(date '+%Y-%m-%d %H:%M:%S')"
 open "$M"; sleep 20
 PROC="$(pgrep -fl MIMUSFinder || true)"
-LOGS="$(log show --start "$START" --style compact --info --predicate 'process == "MIMUSFinder" OR eventMessage CONTAINS "MIMUSFinder" OR eventMessage CONTAINS "app.mimus.finder"' 2>/dev/null | grep -v 'log run noninteractively' | cut -c1-220 | tail -n 40)"
+LOGS="$(log show --start "$START" --style compact --predicate 'process == "MIMUSFinder"' 2>/dev/null | grep 'MIMUS Finder' | cut -c1-220 | tail -n 15)"
+DENY="$(log show --start "$START" --style compact --predicate 'eventMessage CONTAINS "MIMUSFinder" AND eventMessage CONTAINS "deny"' 2>/dev/null | grep -v 'log run' | cut -c1-220 | tail -n 8)"
+[ -n "$DENY" ] && echo "::warning title=finder sandbox::$(echo "$DENY" | enc)"
 echo "processo: $PROC"; echo "$LOGS"
 echo "::notice title=estensione del Finder::processo: ${PROC:-nessuno}%0Apluginkit: $(echo "$PK" | enc)$(echo "${LOGS:-nessun messaggio}" | enc)"
 case "$LOGS" in *"locale.txt=local"*) echo "  OK   pallini messi dal Finder";;

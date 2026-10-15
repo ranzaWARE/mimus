@@ -25,6 +25,12 @@
     <string>11.0</string>
     <key>NSHumanReadableCopyright</key>
     <string>MIMUS</string>
+    <!-- parla solo con il servizio di MIMUS sul Mac stesso (127.0.0.1) -->
+    <key>NSAppTransportSecurity</key>
+    <dict>
+        <key>NSAllowsLocalNetworking</key>
+        <true/>
+    </dict>
     <key>NSExtension</key>
     <dict>
         <key>NSExtensionAttributes</key>
