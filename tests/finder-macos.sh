@@ -75,9 +75,9 @@ kill $PID 2>/dev/null; wait $PID 2>/dev/null
     --rc --rc-addr 127.0.0.1:5572 --log-file "$T/mount.log" &
 PID=$!
 back=0
-for _ in $(seq 40); do curl -s -m 2 -X POST http://127.0.0.1:5572/core/pid | grep -q pid && mount | grep -q " on $M " && { back=1; break; }; sleep 1; done
+for _ in $(seq 90); do curl -s -m 2 -X POST http://127.0.0.1:5572/core/pid | grep -q pid && mount | grep -q " on $M " && { back=1; break; }; sleep 1; done
 if [ $back = 1 ]; then echo "  OK   cartella di nuovo collegata"
-else echo "::error title=finder::la cartella non torna dopo il riavvio: $(tail -n 8 "$T/mount.log" | enc)"; FAILS=$((FAILS + 1)); fi
+else echo "::error title=finder::la cartella non torna dopo il riavvio: $(tail -n 25 "$T/mount.log" | cut -c1-200 | enc)%0Amount: $(mount | grep -i collegata | enc)%0Aprocessi: $(lsof +D "$M" 2>/dev/null | head -8 | enc)"; FAILS=$((FAILS + 1)); fi
 open "$M"; sleep 15
 FL="$HOME/Library/Containers/app.mimus.finder/Data/tmp/mimus-finder.log"
 AFTER="$(sed -n '/collegamento ripartito/,$p' "$FL" 2>/dev/null | tail -n 8)"

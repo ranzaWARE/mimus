@@ -11,7 +11,7 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
  
  	"github.com/rclone/rclone/cmd/mountlib"
  	"github.com/rclone/rclone/cmd/serve/nfs"
-@@ -72,7 +74,25 @@
+@@ -72,7 +74,29 @@
  	cmd = append(cmd, "localhost:"+opt.VolumeName, mountpoint)
  	fs.Debugf(nil, "Running mount command: %q", cmd)
  
@@ -25,20 +25,24 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
 +			fs.Errorf(nil, "scollegamento non riuscito: %v", uerr)
 +		}
 +	}
++	// "busy" can last a while after a forced unmount (the Finder still
++	// holding the old folder): up to a minute before giving up
 +	var out []byte
 +	for try := 1; ; try++ {
 +		out, err = exec.Command(cmd[0], cmd[1:]...).CombinedOutput()
-+		if err == nil || try == 5 {
++		if err == nil || try == 20 {
 +			break
 +		}
-+		fs.Logf(nil, "collegamento non riuscito (%s): riprovo", bytes.TrimSpace(out))
-+		_ = mimusUnmount(mountpoint)
-+		time.Sleep(2 * time.Second)
++		fs.Logf(nil, "collegamento non riuscito (tentativo %d, %s, ancora collegata: %v): riprovo", try, bytes.TrimSpace(out), mimusIsMounted(mountpoint))
++		if mimusIsMounted(mountpoint) {
++			_ = mimusUnmount(mountpoint)
++		}
++		time.Sleep(3 * time.Second)
 +	}
  	if err != nil {
  		out = bytes.TrimSpace(out)
  		err = fmt.Errorf("%s: failed to mount NFS volume: %v", out, err)
-@@ -83,23 +103,11 @@
+@@ -83,23 +107,11 @@
  		if s.UnmountedExternally {
  			return nil
  		}
@@ -64,7 +68,7 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
  		} else if shutdownErr != nil {
  			return fmt.Errorf("failed to shutdown NFS server: %e", shutdownErr)
  		}
-@@ -114,3 +122,64 @@
+@@ -114,3 +126,64 @@
  
  	return
  }
