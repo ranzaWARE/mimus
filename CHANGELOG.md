@@ -3,6 +3,29 @@
 Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
 `rclone-mimus version` (es. `v1.72.0-mimus-1.0.0`).
 
+## 1.6.4 — 2026-10-15
+
+Giro di prove a caccia di situazioni in cui si potevano perdere dati: 45
+scenari (crash, rete che cade, colleghi che modificano o cancellano, lavoro
+offline, due Mac, nomi con accenti e maiuscole). Corretti tre problemi:
+
+- **Rinomina che cambia solo maiuscole e minuscole** (es. «Offerta.docx» →
+  «offerta.docx»): il file veniva **cancellato** dal server e poi anche dal
+  Mac. Il server non distingue maiuscole e minuscole, e il nome «nuovo»
+  sembrava un altro file da sostituire. Ora la rinomina passa da un nome
+  temporaneo, anche per le cartelle e per le rinomine fatte offline.
+- **Modifica offline di un file non tutto sul Mac**: le parti mancanti
+  venivano prese più tardi dalla versione del collega, creando un file che
+  mescolava le due. Ora, prima di modificare un file, MIMUS lo scarica tutto;
+  se non si può (offline), il salvataggio viene rifiutato e il file resta
+  intatto. Allo stesso modo una copia non viene mai completata con pezzi di
+  una versione più nuova.
+- **File rinominati sul server**: la copia segue il nuovo nome solo se anche
+  il contenuto coincide (inizio, metà e fine), non basta più stessa dimensione
+  e data.
+- Le prove girano a ogni versione (Linux con Samba e Mac): se una fallisce la
+  versione non viene pubblicata.
+
 ## 1.6.3 — 2026-10-15
 
 - **File rinominati sul server**: se un collega rinomina un file che hai sul

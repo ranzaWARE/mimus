@@ -20,6 +20,9 @@ import (
 
 var errOffline = errors.New("server remoto non raggiungibile")
 
+// errChanged: the file is no longer the version being read
+var errChanged = errors.New("il file è stato modificato sul server remoto da qualcun altro")
+
 // Online state.
 //
 // A background prober connects to the probe address every few seconds;

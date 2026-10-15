@@ -1,9 +1,9 @@
 diff --git a/vfs/mimus.go b/vfs/mimus.go
 new file mode 100644
-index 0000000..e9563c8
+index 0000000..1f80cc2
 --- /dev/null
 +++ b/vfs/mimus.go
-@@ -0,0 +1,414 @@
+@@ -0,0 +1,449 @@
 +package vfs
 +
 +// MIMUS: what the Finder extension needs. For the files of a folder: on
@@ -11,6 +11,7 @@ index 0000000..e9563c8
 +// Download now, keep always on this computer, remove the local copy.
 +
 +import (
++	"bytes"
 +	"context"
 +	"errors"
 +	"io"
@@ -416,19 +417,55 @@ index 0000000..e9563c8
 +		}
 +		found, foundObj = cand, o
 +	}
++	// same size and date are not enough: the content must match too,
++	// otherwise the new name would show the content of another file
++	if found != "" && !vfs.mimusSameContent(ctx, name, foundObj, st.Size) {
++		fs.Infof(nil, "MIMUS: %q ha la stessa dimensione e data di %q ma un contenuto diverso: non è una rinomina", found, name)
++		return "", nil
++	}
 +	return found, foundObj
++}
++
++// mimusSameContent compares pieces of the local copy of name with the file
++// o on the server: all of it if small, otherwise start, middle and end
++func (vfs *VFS) mimusSameContent(ctx context.Context, name string, o fs.Object, size int64) bool {
++	const piece = 64 * 1024
++	type span struct{ off, n int64 }
++	spans := []span{{0, size}}
++	if size > 3*piece {
++		spans = []span{{0, piece}, {size/2 - piece/2, piece}, {size - piece, piece}}
++	}
++	for _, sp := range spans {
++		local := make([]byte, sp.n)
++		if _, err := vfs.cache.ReadLocal(name, local, sp.off); err != nil {
++			return false
++		}
++		in, err := o.Open(ctx, &fs.RangeOption{Start: sp.off, End: sp.off + sp.n - 1})
++		if err != nil {
++			return false
++		}
++		remote := make([]byte, sp.n)
++		_, err = io.ReadFull(in, remote)
++		_ = in.Close()
++		if err != nil || !bytes.Equal(local, remote) {
++			return false
++		}
++	}
++	return true
 +}
 diff --git a/vfs/mimus_test.go b/vfs/mimus_test.go
 new file mode 100644
-index 0000000..1690285
+index 0000000..09e3e32
 --- /dev/null
 +++ b/vfs/mimus_test.go
-@@ -0,0 +1,201 @@
+@@ -0,0 +1,286 @@
 +package vfs
 +
 +import (
 +	"context"
++	"io"
 +	"os"
++	"strings"
 +	"sync"
 +	"testing"
 +	"time"
@@ -625,12 +662,123 @@ index 0000000..1690285
 +	require.NoError(t, h.Close())
 +	assert.Equal(t, "contenuto a", string(buf[:n]))
 +}
++
++// a file deleted on the server and another one with the same size and date
++// but different content: not a rename, the copy must not take the new name
++func TestMimusOrphansNotRenamed(t *testing.T) {
++	ctx := context.Background()
++	opt := vfscommon.Opt
++	opt.CacheMode = vfscommon.CacheModeFull
++	opt.DirCacheTime = fs.Duration(time.Millisecond)
++	opt.FastFingerprint = true // size and date only, as on SMB
++	r := fstest.NewRun(t)
++	pf := &pinFs{Fs: r.Fremote, pins: map[string]bool{}}
++	vfs := New(pf, &opt)
++	t.Cleanup(func() { cleanupVFS(t, vfs) })
++	big := strings.Repeat("x", 300*1024)
++	a := r.WriteObject(ctx, "dir/a.dat", "AAAAAAAAAA", t1)
++	g := r.WriteObject(ctx, "dir/g.dat", big, t1)
++	fsp := rc.Params{"fs": fs.ConfigString(pf)}
++	_, err := rc.Calls.Get("vfs/mimus-download").Fn(ctx, rc.Params{"fs": fs.ConfigString(pf), "path": "dir"})
++	require.NoError(t, err)
++
++	// small file: different everywhere
++	r.WriteObject(ctx, "dir/b.dat", "BBBBBBBBBB", t1)
++	// big file: different only in the middle
++	r.WriteObject(ctx, "dir/h.dat", big[:150*1024]+"y"+big[150*1024+1:], t1)
++	for _, it := range []fstest.Item{a, g} {
++		o, err := r.Fremote.NewObject(ctx, it.Path)
++		require.NoError(t, err)
++		require.NoError(t, o.Remove(ctx))
++	}
++	time.Sleep(10 * time.Millisecond)
++	out, err := rc.Calls.Get("vfs/mimus-orphans").Fn(ctx, fsp)
++	require.NoError(t, err)
++	assert.Equal(t, []string{}, out["renamed"])
++	assert.Equal(t, []string{"dir/a.dat", "dir/g.dat"}, out["removed"])
++	for name, want := range map[string]string{"dir/b.dat": "BBBBBBBBBB", "dir/h.dat": big[:150*1024] + "y" + big[150*1024+1:]} {
++		h, err := vfs.OpenFile(name, os.O_RDONLY, 0)
++		require.NoError(t, err)
++		got, err := io.ReadAll(h)
++		require.NoError(t, err)
++		require.NoError(t, h.Close())
++		assert.True(t, string(got) == want, name)
++	}
++}
++
++// a change in the middle of a file not on this computer: the rest comes
++// from the version being changed, even if the server has a newer one by the
++// time it is uploaded
++func TestMimusWriteCompletesCopy(t *testing.T) {
++	ctx := context.Background()
++	opt := vfscommon.Opt
++	opt.CacheMode = vfscommon.CacheModeFull
++	opt.WriteBack = fs.Duration(100 * time.Millisecond)
++	r := fstest.NewRun(t)
++	vfs := New(r.Fremote, &opt)
++	t.Cleanup(func() { cleanupVFS(t, vfs) })
++	orig := strings.Repeat("a", 300*1024)
++	r.WriteObject(ctx, "big.txt", orig, t1)
++
++	h, err := vfs.OpenFile("big.txt", os.O_RDWR, 0)
++	require.NoError(t, err)
++	_, err = h.WriteAt([]byte("X"), 1000)
++	require.NoError(t, err)
++	assert.True(t, vfs.cache.State("big.txt").Complete)
++	// someone else changes it meanwhile
++	r.WriteObject(ctx, "big.txt", strings.Repeat("b", 300*1024), t2)
++	require.NoError(t, h.Close())
++
++	want := orig[:1000] + "X" + orig[1001:]
++	var got string
++	for i := 0; i < 100; i++ {
++		o, err := r.Fremote.NewObject(ctx, "big.txt")
++		require.NoError(t, err)
++		in, err := o.Open(ctx)
++		require.NoError(t, err)
++		b, _ := io.ReadAll(in)
++		_ = in.Close()
++		if got = string(b); got == want {
++			break
++		}
++		time.Sleep(50 * time.Millisecond)
++	}
++	assert.True(t, got == want, "uploaded file mixes two versions")
++}
+diff --git a/vfs/read_write.go b/vfs/read_write.go
+index 56b9c46..e03441b 100644
+--- a/vfs/read_write.go
++++ b/vfs/read_write.go
+@@ -344,6 +344,10 @@ func (fh *RWFileHandle) _writeAt(b []byte, off int64, release bool) (n int, err
+ 		fh.offset = size
+ 		off = fh.offset
+ 	}
++	// MIMUS: never write into an incomplete copy
++	if err = fh.item.EnsureComplete(); err != nil {
++		return 0, fmt.Errorf("file non tutto su questo computer, modifica non possibile: %w", err)
++	}
+ 	fh.writeCalled = true
+ 	if release {
+ 		// Do the writing with fh.mu unlocked
+@@ -393,6 +397,12 @@ func (fh *RWFileHandle) _truncate(size int64) (err error) {
+ 	if size == fh._size() {
+ 		return nil
+ 	}
++	// MIMUS: the part that is kept must be complete (see _writeAt)
++	if size > 0 {
++		if err = fh.item.EnsureComplete(); err != nil {
++			return fmt.Errorf("file non tutto su questo computer, modifica non possibile: %w", err)
++		}
++	}
+ 	fh.file.setSize(size)
+ 	return fh.item.Truncate(size)
+ }
 diff --git a/vfs/vfscache/mimus.go b/vfs/vfscache/mimus.go
 new file mode 100644
-index 0000000..d0a2a4b
+index 0000000..dcfa747
 --- /dev/null
 +++ b/vfs/vfscache/mimus.go
-@@ -0,0 +1,84 @@
+@@ -0,0 +1,116 @@
 +package vfscache
 +
 +// MIMUS: state of a file in the cache (for the Finder: on this Mac, only on
@@ -639,6 +787,8 @@ index 0000000..d0a2a4b
 +
 +import (
 +	"context"
++	"errors"
++	"os"
 +	"sort"
 +	"strings"
 +)
@@ -714,4 +864,34 @@ index 0000000..d0a2a4b
 +	c.removeNotInUse(item, 0, false) // re-checks opens and changes
 +	_, still := c.item[name]
 +	return !still
++}
++
++// ReadLocal reads from the local copy of name at off. Only for a complete
++// copy with nothing to upload: used to compare it with a file on the server.
++func (c *Cache) ReadLocal(name string, p []byte, off int64) (int, error) {
++	name = clean(name)
++	st := c.State(name)
++	if !st.Complete || st.Dirty {
++		return 0, errors.New("copia locale non completa")
++	}
++	fd, err := os.Open(c.toOSPath(name))
++	if err != nil {
++		return 0, err
++	}
++	defer func() { _ = fd.Close() }()
++	return fd.ReadAt(p, off)
++}
++
++// EnsureComplete downloads the parts of the file not yet on this computer.
++// MIMUS: called before changing a copy that is not complete. The missing
++// parts must come from the version being changed, now: later (offline, or
++// after someone changed the file on the server) they could only come from
++// another version, and the result would be a mix of the two.
++func (item *Item) EnsureComplete() error {
++	item.mu.Lock()
++	defer item.mu.Unlock()
++	if item.info.Size <= 0 || item._present() {
++		return nil
++	}
++	return item._ensure(0, item.info.Size)
 +}

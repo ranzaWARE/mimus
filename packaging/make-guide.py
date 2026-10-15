@@ -439,9 +439,9 @@ td.icon {{ width: 64px; text-align: center; vertical-align: middle; }}
   <table>
     <tr><th>Offline puoi…</th><th></th></tr>
     <tr><td>Vedere tutte le cartelle remote</td><td class="ok">sì</td></tr>
-    <tr><td>Aprire e modificare i file che avevi già aperto</td><td class="ok">sì</td></tr>
+    <tr><td>Aprire e modificare i file sul Mac (pallino verde)</td><td class="ok">sì</td></tr>
     <tr><td>Creare file e cartelle, rinominare, cancellare</td><td class="ok">sì, vengono applicati quando torni in rete</td></tr>
-    <tr><td>Aprire un file mai aperto prima</td><td class="no">no, va scaricato</td></tr>
+    <tr><td>Aprire o modificare un file solo sul server (cerchio grigio)</td><td class="no">no, va scaricato: il salvataggio viene rifiutato, così il file non si rovina</td></tr>
     <tr><td>Vedere le novità dei colleghi</td><td class="no">no, arrivano quando torni in rete</td></tr>
   </table>
   <div class="note"><strong>Prima di partire:</strong> apri una volta i file che ti serviranno fuori ufficio, così restano sul Mac.</div>

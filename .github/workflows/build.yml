@@ -12,7 +12,28 @@ on:
 permissions:
   contents: write
 jobs:
+  linux:
+    # Samba vero e mount FUSE (stessa VFS del Mac): server spento, colleghi
+    # che modificano, crash, rinomine. Nessun rilascio se si perdono dati.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+      - name: Samba e FUSE
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq samba fuse3 >/dev/null
+          sudo systemctl stop smbd nmbd samba-ad-dc 2>/dev/null || true
+      - name: rclone-mimus per Linux (con test)
+        run: TEST_LINUX=1 bash scripts/ci-run.sh rclone-mimus bash scripts/build-rclone.sh
+      - name: Prova completa con Samba
+        run: sudo -E bash scripts/ci-run.sh e2e bash tests/e2e-linux.sh build/rclone-mimus-linux
+      - name: Nessuna perdita di dati
+        run: sudo -E bash scripts/ci-run.sh dataloss bash tests/dataloss-linux.sh build/rclone-mimus-linux
   build:
+    needs: linux
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
@@ -27,6 +48,8 @@ jobs:
         run: bash scripts/ci-run.sh app bash scripts/build-mac-app.sh
       - name: Novità dal server visibili nel Finder in pochi secondi
         run: LIMIT=60 KQLIMIT=45 bash tests/refresh-macos.sh
+      - name: Nessuna perdita di dati sul Mac
+        run: bash tests/dataloss-macos.sh
       - name: Estensione del Finder
         run: bash tests/finder-macos.sh
       - name: Prova dell'icona nella barra dei menu

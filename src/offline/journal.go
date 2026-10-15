@@ -449,7 +449,8 @@ func (f *Fs) applyOp(ctx context.Context, op jop) error {
 			}
 		}
 		dst := op.Dst
-		for try := 0; ; try++ {
+		// a change of case only: the "existing" destination is the file itself
+		for try := 0; !f.caseOnly(op.Src, op.Dst); try++ {
 			exists, err := f.fileExists(ctx, dst)
 			if err != nil {
 				return err
@@ -477,11 +478,10 @@ func (f *Fs) applyOp(ctx context.Context, op jop) error {
 			}
 			break
 		}
-		do := f.Fs.Features().Move
-		if do == nil {
+		if f.Fs.Features().Move == nil {
 			return nil
 		}
-		res, err := do(ctx, cur, dst)
+		res, err := f.moveBase(ctx, cur, op.Src, dst)
 		if err != nil {
 			return err
 		}
@@ -502,7 +502,7 @@ func (f *Fs) applyOp(ctx context.Context, op jop) error {
 			return nil
 		}
 		dst := op.Dst
-		for try := 0; ; try++ {
+		for try := 0; !f.caseOnly(op.Src, op.Dst); try++ {
 			exists, err := f.dirExists(ctx, dst)
 			if err != nil {
 				return err
@@ -530,11 +530,10 @@ func (f *Fs) applyOp(ctx context.Context, op jop) error {
 			}
 			break
 		}
-		do := f.Fs.Features().DirMove
-		if do == nil {
+		if f.Fs.Features().DirMove == nil {
 			return nil
 		}
-		if err := do(ctx, f.Fs, op.Src, dst); err != nil {
+		if err := f.dirMoveBase(ctx, op.Src, dst); err != nil {
 			return err
 		}
 		if dst != op.Dst {

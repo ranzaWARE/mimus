@@ -24,6 +24,7 @@ import (
 	"io"
 	"path"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -219,6 +220,10 @@ func NewFs(ctx context.Context, name, rpath string, m configmap.Mapper) (fs.Fs, 
 	f.features = (&fs.Features{
 		CanHaveEmptyDirectories: true,
 		PartialUploads:          true,
+		// as the remote (SMB: «Caso.txt» and «caso.txt» are the same file).
+		// Without it a rename that only changes upper/lower case would delete
+		// the "existing" destination, which is the file itself
+		CaseInsensitive: true,
 	}).Fill(ctx, f).Mask(ctx, baseFs).WrapsFs(f, baseFs)
 	// SMB has no change notifications: ours re-reads the folders in use
 	f.features.ChangeNotify = f.ChangeNotify
@@ -506,7 +511,7 @@ func (f *Fs) Move(ctx context.Context, src fs.Object, remote string) (fs.Object,
 	if err != nil {
 		return nil, err
 	}
-	res, err := do(ctx, base, remote)
+	res, err := f.moveBase(ctx, base, o.remote, remote)
 	if err != nil {
 		f.netErr(err)
 		return nil, err
@@ -514,6 +519,60 @@ func (f *Fs) Move(ctx context.Context, src fs.Object, remote string) (fs.Object,
 	f.store.removeEntry(o.remote)
 	f.store.upsertObject(ctx, res)
 	return f.wrapObject(res), nil
+}
+
+// caseOnly: the names differ only in upper/lower case and the remote does
+// not tell them apart (SMB): the destination that "exists" is the file
+// itself, never to be deleted or treated as a conflict
+func (f *Fs) caseOnly(from, to string) bool {
+	return from != to && f.Fs.Features().CaseInsensitive && strings.EqualFold(from, to)
+}
+
+// caseTempName: temporary name for a change of case, done in two steps
+func caseTempName(remote string) string {
+	return remote + ".mimus-" + strconv.FormatInt(time.Now().UnixNano()%(1<<40), 36)
+}
+
+// moveBase renames a file on the remote; a change of case only goes
+// through a temporary name
+func (f *Fs) moveBase(ctx context.Context, base fs.Object, from, to string) (fs.Object, error) {
+	do := f.Fs.Features().Move
+	if !f.caseOnly(from, to) {
+		return do(ctx, base, to)
+	}
+	tmp, err := do(ctx, base, caseTempName(to))
+	if err != nil {
+		return nil, err
+	}
+	res, err := do(ctx, tmp, to)
+	if err != nil {
+		if _, berr := do(ctx, tmp, from); berr != nil {
+			fs.Errorf(f, "%q rimasto col nome temporaneo %q: %v", from, tmp.Remote(), berr)
+		}
+		return nil, err
+	}
+	return res, nil
+}
+
+// dirMoveBase renames a folder on the remote; a change of case only goes
+// through a temporary name (otherwise SMB says the folder exists and rclone
+// would move the files one by one onto themselves)
+func (f *Fs) dirMoveBase(ctx context.Context, from, to string) error {
+	do := f.Fs.Features().DirMove
+	if !f.caseOnly(from, to) {
+		return do(ctx, f.Fs, from, to)
+	}
+	tmp := caseTempName(to)
+	if err := do(ctx, f.Fs, from, tmp); err != nil {
+		return err
+	}
+	if err := do(ctx, f.Fs, tmp, to); err != nil {
+		if berr := do(ctx, f.Fs, tmp, from); berr != nil {
+			fs.Errorf(f, "cartella %q rimasta col nome temporaneo %q: %v", from, tmp, berr)
+		}
+		return err
+	}
+	return nil
 }
 
 // DirMove renames a directory (queued while offline)
@@ -527,7 +586,7 @@ func (f *Fs) DirMove(ctx context.Context, src fs.Fs, srcRemote, dstRemote string
 		if err := f.enqueue(jop{Op: "dirmove", Src: srcRemote, Dst: dstRemote}); err != nil {
 			return err
 		}
-	} else if err := do(ctx, f.Fs, srcRemote, dstRemote); err != nil {
+	} else if err := f.dirMoveBase(ctx, srcRemote, dstRemote); err != nil {
 		f.netErr(err)
 		return err
 	}
@@ -663,11 +722,26 @@ func (o *Object) SetModTime(ctx context.Context, t time.Time) error {
 	return err
 }
 
-// Open opens the object for reading
+// Open opens the object for reading. Only the version this object stands
+// for: if the file has changed on the server meanwhile, pieces of the new
+// version must not end up in a copy of the old one (a file mixing the two)
 func (o *Object) Open(ctx context.Context, options ...fs.OpenOption) (io.ReadCloser, error) {
+	size, mt := o.version()
+	hadBase := o.hasBase()
 	b, err := o.resolve(ctx)
 	if err != nil {
 		return nil, err
+	}
+	cur := b
+	if hadBase {
+		if cur, err = o.f.Fs.NewObject(ctx, o.remote); err != nil {
+			o.f.netErr(err)
+			return nil, err
+		}
+	}
+	if !o.f.sameVersion(cur, size, mt) {
+		fs.Infof(o.f, "%q è cambiato sul server remoto mentre lo leggevo: non mescolo le due versioni", o.remote)
+		return nil, errChanged
 	}
 	rc, err := b.Open(ctx, options...)
 	if err != nil {

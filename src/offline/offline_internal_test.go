@@ -485,3 +485,37 @@ func TestGone(t *testing.T) {
 		t.Fatal("kept file gone from the server not removed")
 	}
 }
+
+// a file changed on the server after it was listed is not read as if it
+// were the old version (a copy mixing the two)
+func TestOpenOnlyKnownVersion(t *testing.T) {
+	ctx := context.Background()
+	f, base, setOnline := newTestFs(t)
+	p := filepath.Join(base, "a.txt")
+	must(t, os.WriteFile(p, []byte("versione uno"), 0o644))
+	o, err := f.NewObject(ctx, "a.txt")
+	must(t, err)
+	in, err := o.Open(ctx)
+	must(t, err)
+	_ = in.Close()
+	// listed while offline (saved listing), changed on the server meanwhile
+	if _, err := f.List(ctx, ""); err != nil {
+		t.Fatal(err)
+	}
+	setOnline(false)
+	ghost, err := f.NewObject(ctx, "a.txt")
+	must(t, err)
+	must(t, os.WriteFile(p, []byte("versione due, più lunga"), 0o644))
+	setOnline(true)
+	for name, obj := range map[string]fs.Object{"listed": o, "offline": ghost} {
+		if _, err := obj.Open(ctx); err != errChanged {
+			t.Errorf("%s: changed file opened: %v", name, err)
+		}
+	}
+	// the current version opens
+	cur, err := f.NewObject(ctx, "a.txt")
+	must(t, err)
+	in, err = cur.Open(ctx)
+	must(t, err)
+	_ = in.Close()
+}
