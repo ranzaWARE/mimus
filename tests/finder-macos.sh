@@ -39,7 +39,7 @@ echo remoto > "$S/remoto.txt"; echo locale > "$S/locale.txt"
 export RCLONE_CONFIG="$T/rclone.conf"
 "$R" config create mimus offline remote="$S" ui=none >/dev/null
 "$R" nfsmount mimus: "$M" --cache-dir "$T/cache" --vfs-cache-mode full \
-    --rc --rc-addr 127.0.0.1:5572 --log-file "$T/mount.log" &
+    --rc --rc-addr 127.0.0.1:5572 --addr 127.0.0.1:5574 --nfs-cache-type mimus --log-file "$T/mount.log" &
 PID=$!
 cleanup(){ osascript -e 'tell application "Finder" to close every window' >/dev/null 2>&1
     kill $PID 2>/dev/null; wait $PID 2>/dev/null
@@ -72,16 +72,26 @@ case "$LOGS" in *"locale.txt=local"*) echo "  OK   pallini messi dal Finder";;
 # senza aiuti: la cartella deve tornare e i pallini anche
 kill $PID 2>/dev/null; wait $PID 2>/dev/null
 "$R" nfsmount mimus: "$M" --cache-dir "$T/cache" --vfs-cache-mode full \
-    --rc --rc-addr 127.0.0.1:5572 --log-file "$T/mount.log" &
+    --rc --rc-addr 127.0.0.1:5572 --addr 127.0.0.1:5574 --nfs-cache-type mimus --log-file "$T/mount.log" &
 PID=$!
 back=0
 for _ in $(seq 90); do curl -s -m 2 -X POST http://127.0.0.1:5572/core/pid | grep -q pid && mount | grep -q " on $M " && { back=1; break; }; sleep 1; done
 if [ $back = 1 ]; then echo "  OK   cartella di nuovo collegata"
 else echo "::error title=finder::la cartella non torna dopo il riavvio: $(tail -n 25 "$T/mount.log" | cut -c1-200 | enc)%0Amount: $(mount | grep -i collegata | enc)%0Aprocessi: $(lsof +D "$M" 2>/dev/null | head -8 | enc)"; FAILS=$((FAILS + 1)); fi
+if grep -q "la riprendo così com'è" "$T/mount.log"; then echo "  OK   cartella ripresa senza scollegarla"
+else echo "::warning title=finder::cartella non ripresa: $(grep -E 'collegat|riprovo' "$T/mount.log" | tail -n 4 | enc)"; fi
 open "$M"; sleep 15
 FL="$HOME/Library/Containers/app.mimus.finder/Data/tmp/mimus-finder.log"
 AFTER="$(sed -n '/collegamento ripartito/,$p' "$FL" 2>/dev/null | tail -n 8)"
 echo "::notice title=pallini dopo il riavvio del collegamento::$(tail -n 8 "$FL" 2>&1 | enc)%0Aservizio: $(grep -E 'scollego|riprovo|NFS Server' "$T/mount.log" | tail -n 4 | enc)"
 case "$AFTER" in *"collegamento ripartito"*"locale.txt=local"*) echo "  OK   pallini rimessi dopo il riavvio";;
     *) echo "::warning title=finder::pallini non rimessi dopo il riavvio del collegamento";; esac
+# il controllo lasciato dal processo vecchio non deve scollegare quello nuovo
+sleep 25
+if mount | grep -q " on $M " && perl -e 'alarm 5; exec @ARGV' cat "$M/locale.txt" >/dev/null 2>&1; then echo "  OK   ancora collegata dopo 40 secondi"
+else echo "::error title=finder::la cartella si è scollegata dopo il riavvio"; FAILS=$((FAILS + 1)); fi
+# servizio fermato per sempre: la cartella non deve restare appesa
+kill $PID 2>/dev/null; wait $PID 2>/dev/null; sleep 40
+if ! mount | grep -q " on $M "; then echo "  OK   servizio fermato: cartella scollegata da sola"
+else echo "::error title=finder::servizio fermato ma la cartella resta collegata (morta)"; FAILS=$((FAILS + 1)); fi
 exit $FAILS

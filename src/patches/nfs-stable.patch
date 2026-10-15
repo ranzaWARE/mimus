@@ -1,34 +1,49 @@
 diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
 --- a/cmd/nfsmount/nfsmount.go
 +++ b/cmd/nfsmount/nfsmount.go
-@@ -11,7 +11,9 @@
+@@ -8,10 +8,15 @@
+ import (
+ 	"bytes"
+ 	"context"
++	"errors"
  	"fmt"
  	"net"
++	"os"
  	"os/exec"
 +	"path/filepath"
  	"runtime"
++	"syscall"
 +	"time"
  
  	"github.com/rclone/rclone/cmd/mountlib"
  	"github.com/rclone/rclone/cmd/serve/nfs"
-@@ -72,7 +74,29 @@
+@@ -72,7 +77,38 @@
  	cmd = append(cmd, "localhost:"+opt.VolumeName, mountpoint)
  	fs.Debugf(nil, "Running mount command: %q", cmd)
  
 -	out, err := exec.Command(cmd[0], cmd[1:]...).CombinedOutput()
-+	// MIMUS: a previous run that ended badly (crash, kill, unmount refused
-+	// while the Finder used the folder) can leave the folder mounted on a
-+	// dead server: every new mount would fail with "busy" (16) for ever
++	// MIMUS: the folder may still be mounted from the previous run (restart,
++	// update, crash). With a fixed port and stable handles it is taken over
++	// as it is: the Mac keeps using it, the Finder notices nothing (an
++	// unmount + mount while the Finder shows the folder fails with "busy").
++	// A mount that does not answer this server (older version, other port)
++	// is unmounted first.
++	adopt := false
 +	if mimusIsMounted(mountpoint) {
-+		fs.Logf(nil, "la cartella è ancora collegata a un servizio fermo: la scollego")
-+		if uerr := mimusUnmount(mountpoint); uerr != nil {
-+			fs.Errorf(nil, "scollegamento non riuscito: %v", uerr)
++		if mimusFixedPort() && mimusAnswers(mountpoint, 20*time.Second) {
++			adopt = true
++			fs.Logf(nil, "la cartella è ancora collegata: la riprendo così com'è")
++		} else {
++			fs.Logf(nil, "la cartella è ancora collegata a un servizio fermo: la scollego")
++			if uerr := mimusUnmount(mountpoint); uerr != nil {
++				fs.Errorf(nil, "scollegamento non riuscito: %v", uerr)
++			}
 +		}
 +	}
 +	// "busy" can last a while after a forced unmount (the Finder still
 +	// holding the old folder): up to a minute before giving up
 +	var out []byte
-+	for try := 1; ; try++ {
++	for try := 1; !adopt; try++ {
 +		out, err = exec.Command(cmd[0], cmd[1:]...).CombinedOutput()
 +		if err == nil || try == 20 {
 +			break
@@ -42,7 +57,7 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
  	if err != nil {
  		out = bytes.TrimSpace(out)
  		err = fmt.Errorf("%s: failed to mount NFS volume: %v", out, err)
-@@ -83,23 +107,11 @@
+@@ -83,23 +119,21 @@
  		if s.UnmountedExternally {
  			return nil
  		}
@@ -57,7 +72,16 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
 -			}
 -			cmd = append(cmd, "umount", "-f", mountpoint)
 -			out, umountErr = exec.Command(cmd[0], cmd[1:]...).CombinedOutput()
--		}
++		// MIMUS: with a fixed port the folder stays mounted for the next
++		// run (see above). If none comes (service stopped for good), a
++		// detached watcher unmounts it after a while, so the Finder is not
++		// left with a dead folder.
++		if mimusFixedPort() {
++			mimusUnmountLater(mountpoint)
++			shutdownErr := s.Shutdown()
++			VFS.Shutdown()
++			return shutdownErr
+ 		}
 +		umountErr := mimusUnmount(mountpoint) // MIMUS: with retries
  		shutdownErr := s.Shutdown()
  		VFS.Shutdown()
@@ -68,7 +92,7 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
  		} else if shutdownErr != nil {
  			return fmt.Errorf("failed to shutdown NFS server: %e", shutdownErr)
  		}
-@@ -114,3 +126,64 @@
+@@ -114,3 +148,112 @@
  
  	return
  }
@@ -133,6 +157,66 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
 +	}
 +	return last
 +}
++
++// mimusFixedPort: the NFS server listens on a fixed port (--addr host:port)
++func mimusFixedPort() bool {
++	_, port, err := net.SplitHostPort(nfs.Opt.ListenAddr)
++	return err == nil && port != "" && port != "0"
++}
++
++// mimusAnswers: the mount at mountpoint is served by this process. A
++// lookup of a name that does not exist must come back "not found" in time:
++// a dead mount hangs, one with handles unknown here says "stale".
++func mimusAnswers(mountpoint string, timeout time.Duration) bool {
++	done := make(chan error, 1)
++	go func() {
++		_, err := os.Lstat(filepath.Join(mountpoint, ".mimus-check-collegamento"))
++		done <- err
++	}()
++	select {
++	case err := <-done:
++		return errors.Is(err, os.ErrNotExist)
++	case <-time.After(timeout):
++		return false
++	}
++}
++
++// mimusUnmountLater starts a watcher, detached from this process (it
++// survives launchd stopping the service): in 30 s, if no new service
++// listens on the port, the folder is unmounted
++func mimusUnmountLater(mountpoint string) {
++	host, port, err := net.SplitHostPort(nfs.Opt.ListenAddr)
++	if err != nil {
++		return
++	}
++	if host == "" {
++		host = "127.0.0.1"
++	}
++	script := `sleep 30
++if ! nc -z "$2" "$3" >/dev/null 2>&1; then
++  diskutil unmount force "$1" >/dev/null 2>&1 || umount -f "$1" >/dev/null 2>&1
++fi`
++	cmd := exec.Command("/bin/sh", "-c", script, "sh", mountpoint, host, port)
++	cmd.Env = append(os.Environ(), "PATH=/usr/sbin:/usr/bin:/sbin:/bin")
++	cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
++	if err := cmd.Start(); err != nil {
++		fs.Errorf(nil, "controllo della cartella dopo l'arresto non avviato: %v", err)
++		return
++	}
++	_ = cmd.Process.Release()
++}
+diff --git a/cmd/serve/nfs/cache.go b/cmd/serve/nfs/cache.go
+--- a/cmd/serve/nfs/cache.go
++++ b/cmd/serve/nfs/cache.go
+@@ -65,6 +65,8 @@
+ 		return nfshelper.NewCachingHandler(h, h.opt.HandleLimit), nil
+ 	case cacheDisk:
+ 		return newDiskHandler(h)
++	case cacheMimus:
++		return newMimusHandler(h)
+ 	case cacheSymlink:
+ 		dh, err := newDiskHandler(h)
+ 		if err != nil {
 diff --git a/cmd/serve/nfs/filesystem.go b/cmd/serve/nfs/filesystem.go
 --- a/cmd/serve/nfs/filesystem.go
 +++ b/cmd/serve/nfs/filesystem.go
@@ -148,6 +232,25 @@ diff --git a/cmd/serve/nfs/filesystem.go b/cmd/serve/nfs/filesystem.go
  // OpenFile opens a file
  func (f *FS) OpenFile(filename string, flag int, perm os.FileMode) (node billy.File, err error) {
  	defer log.Trace(filename, "flag=0x%X, perm=%v", flag, perm)("%v, err=%v", &node, &err)
+diff --git a/cmd/serve/nfs/nfs.go b/cmd/serve/nfs/nfs.go
+--- a/cmd/serve/nfs/nfs.go
++++ b/cmd/serve/nfs/nfs.go
+@@ -55,6 +55,7 @@
+ 	cacheMemory handleCache = iota
+ 	cacheDisk
+ 	cacheSymlink
++	cacheMimus // MIMUS: stable handles, survive a restart (mimus_cache.go)
+ )
+ 
+ type handleCacheChoices struct{}
+@@ -64,6 +65,7 @@
+ 		cacheMemory:  "memory",
+ 		cacheDisk:    "disk",
+ 		cacheSymlink: "symlink",
++		cacheMimus:   "mimus",
+ 	}
+ }
+ 
 diff --git a/vendor/github.com/willscott/go-nfs/nfs_oncommit.go b/vendor/github.com/willscott/go-nfs/nfs_oncommit.go
 --- a/vendor/github.com/willscott/go-nfs/nfs_oncommit.go
 +++ b/vendor/github.com/willscott/go-nfs/nfs_oncommit.go
@@ -213,4 +316,253 @@ diff --git a/vendor/github.com/willscott/go-nfs/nfs_onwrite.go b/vendor/github.c
 +// mimusSyncer: a file system that can make a file durable (MIMUS)
 +type mimusSyncer interface {
 +	MimusSync(filename string) error
++}
+diff --git a/cmd/serve/nfs/mimus_cache.go b/cmd/serve/nfs/mimus_cache.go
+new file mode 100644
+--- /dev/null
++++ b/cmd/serve/nfs/mimus_cache.go
+@@ -0,0 +1,188 @@
++//go:build unix
++
++package nfs
++
++// MIMUS: NFS file handles that stay valid when the service restarts.
++//
++// The handle of a file is the MD5 of its path: the same in every run. The
++// way back (handle -> path) is kept in memory and appended to a small log
++// (one line per path ever handed out), read again at start. So after a
++// restart (update, «Riavvia collegamento», crash) the Mac keeps using the
++// folder it has mounted, with the handles it already has: no unmount, no
++// remount, nothing for the Finder to notice.
++
++import (
++	"bufio"
++	"crypto/md5"
++	"encoding/hex"
++	"fmt"
++	"math"
++	"os"
++	"path"
++	"path/filepath"
++	"strconv"
++	"strings"
++	"sync"
++
++	billy "github.com/go-git/go-billy/v5"
++	"github.com/rclone/rclone/fs"
++	"github.com/rclone/rclone/fs/config"
++	"github.com/rclone/rclone/lib/encoder"
++)
++
++const mimusLogMax = 64 << 20 // rewritten (only live paths) above this size
++
++type mimusHandler struct {
++	mu      sync.RWMutex
++	billyFS billy.Filesystem
++	paths   map[[md5.Size]byte]string
++	file    string
++	log     *os.File
++	written int64
++}
++
++func newMimusHandler(h *Handler) (*mimusHandler, error) {
++	dir := h.opt.HandleCacheDir
++	if dir == "" {
++		dir = filepath.Join(config.GetCacheDir(), "serve-nfs-handle-cache-mimus",
++			encoder.OS.ToStandardName(fs.ConfigString(h.vfs.Fs())))
++	}
++	if err := os.MkdirAll(dir, 0o700); err != nil {
++		return nil, fmt.Errorf("nfs handle cache: %w", err)
++	}
++	mh := &mimusHandler{
++		billyFS: h.billyFS,
++		paths:   map[[md5.Size]byte]string{},
++		file:    filepath.Join(dir, "handles.log"),
++	}
++	mh.load()
++	if err := mh.openLog(mh.written > mimusLogMax); err != nil {
++		return nil, err
++	}
++	fs.Infof("nfs", "handle stabili in %q (%d noti)", mh.file, len(mh.paths))
++	return mh, nil
++}
++
++// load reads the log: "hex<TAB>quoted path", or "hex<TAB>-" for a handle
++// no longer valid
++func (mh *mimusHandler) load() {
++	f, err := os.Open(mh.file)
++	if err != nil {
++		return
++	}
++	defer func() { _ = f.Close() }()
++	sc := bufio.NewScanner(f)
++	sc.Buffer(make([]byte, 64*1024), 1<<20)
++	for sc.Scan() {
++		line := sc.Text()
++		mh.written += int64(len(line) + 1)
++		hexSum, rest, ok := strings.Cut(line, "\t")
++		var key [md5.Size]byte
++		if !ok || hex.DecodedLen(len(hexSum)) != md5.Size {
++			continue
++		}
++		if _, err := hex.Decode(key[:], []byte(hexSum)); err != nil {
++			continue
++		}
++		if rest == "-" {
++			delete(mh.paths, key)
++			continue
++		}
++		if p, err := strconv.Unquote(rest); err == nil {
++			mh.paths[key] = p
++		}
++	}
++}
++
++// openLog opens the log for appending; compact = rewrite it first with the
++// live paths only
++func (mh *mimusHandler) openLog(compact bool) error {
++	if compact {
++		tmp := mh.file + ".tmp"
++		f, err := os.OpenFile(tmp, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
++		if err != nil {
++			return fmt.Errorf("nfs handle cache: %w", err)
++		}
++		w := bufio.NewWriter(f)
++		mh.written = 0
++		for key, p := range mh.paths {
++			n, _ := fmt.Fprintf(w, "%x\t%s\n", key, strconv.Quote(p))
++			mh.written += int64(n)
++		}
++		if err = w.Flush(); err == nil {
++			err = f.Close()
++		} else {
++			_ = f.Close()
++		}
++		if err == nil {
++			err = os.Rename(tmp, mh.file)
++		}
++		if err != nil {
++			return fmt.Errorf("nfs handle cache: %w", err)
++		}
++	}
++	f, err := os.OpenFile(mh.file, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
++	if err != nil {
++		return fmt.Errorf("nfs handle cache: %w", err)
++	}
++	mh.log = f
++	return nil
++}
++
++// ToHandle returns the handle of the file at splitPath (always the same)
++func (mh *mimusHandler) ToHandle(f billy.Filesystem, splitPath []string) []byte {
++	fullPath := path.Join(splitPath...)
++	key := md5.Sum([]byte(fullPath))
++	mh.mu.RLock()
++	p, ok := mh.paths[key]
++	mh.mu.RUnlock()
++	if !ok || p != fullPath {
++		mh.mu.Lock()
++		mh.paths[key] = fullPath
++		n, err := fmt.Fprintf(mh.log, "%x\t%s\n", key, strconv.Quote(fullPath))
++		mh.written += int64(n)
++		if err != nil {
++			fs.Errorf("nfs", "handle cache: %v", err)
++		}
++		mh.mu.Unlock()
++	}
++	return key[:]
++}
++
++// FromHandle returns the file a handle stands for
++func (mh *mimusHandler) FromHandle(fh []byte) (billy.Filesystem, []string, error) {
++	var key [md5.Size]byte
++	if len(fh) != md5.Size {
++		return nil, nil, errStaleHandle
++	}
++	copy(key[:], fh)
++	mh.mu.RLock()
++	p, ok := mh.paths[key]
++	mh.mu.RUnlock()
++	if !ok {
++		return nil, nil, errStaleHandle
++	}
++	return mh.billyFS, strings.Split(p, "/"), nil
++}
++
++// InvalidateHandle forgets a handle (file renamed or deleted)
++func (mh *mimusHandler) InvalidateHandle(f billy.Filesystem, fh []byte) error {
++	var key [md5.Size]byte
++	if len(fh) != md5.Size {
++		return nil
++	}
++	copy(key[:], fh)
++	mh.mu.Lock()
++	defer mh.mu.Unlock()
++	if _, ok := mh.paths[key]; ok {
++		delete(mh.paths, key)
++		n, _ := fmt.Fprintf(mh.log, "%x\t-\n", key)
++		mh.written += int64(n)
++	}
++	return nil
++}
++
++// HandleLimit is the number of handles that can be kept
++func (mh *mimusHandler) HandleLimit() int {
++	return math.MaxInt
++}
+diff --git a/cmd/serve/nfs/mimus_cache_test.go b/cmd/serve/nfs/mimus_cache_test.go
+new file mode 100644
+--- /dev/null
++++ b/cmd/serve/nfs/mimus_cache_test.go
+@@ -0,0 +1,51 @@
++//go:build unix
++
++package nfs
++
++import (
++	"os"
++	"testing"
++
++	"github.com/stretchr/testify/assert"
++	"github.com/stretchr/testify/require"
++)
++
++// handles survive a restart (a new handler reading the same log)
++func TestMimusHandlesStable(t *testing.T) {
++	dir := t.TempDir()
++	h := &Handler{opt: Options{HandleCacheDir: dir}, billyFS: &FS{}}
++	mh, err := newMimusHandler(h)
++	require.NoError(t, err)
++	root := mh.ToHandle(nil, []string{})
++	a := mh.ToHandle(nil, []string{"Doc", "città\nstrana.txt"})
++	b := mh.ToHandle(nil, []string{"Doc", "b.txt"})
++	assert.Equal(t, a, mh.ToHandle(nil, []string{"Doc", "città\nstrana.txt"}))
++	require.NoError(t, mh.InvalidateHandle(nil, b))
++	_, _, err = mh.FromHandle(b)
++	assert.Error(t, err)
++
++	// restart
++	mh2, err := newMimusHandler(h)
++	require.NoError(t, err)
++	_, p, err := mh2.FromHandle(a)
++	require.NoError(t, err)
++	assert.Equal(t, []string{"Doc", "città\nstrana.txt"}, p)
++	_, p, err = mh2.FromHandle(root)
++	require.NoError(t, err)
++	assert.Equal(t, []string{""}, p)
++	_, _, err = mh2.FromHandle(b)
++	assert.Error(t, err, "invalidated handle comes back")
++	assert.Equal(t, root, mh2.ToHandle(nil, []string{}))
++
++	// compaction keeps the live handles only
++	mh2.written = mimusLogMax + 1
++	_ = mh2.log.Close()
++	require.NoError(t, mh2.openLog(true))
++	mh3, err := newMimusHandler(h)
++	require.NoError(t, err)
++	_, _, err = mh3.FromHandle(a)
++	require.NoError(t, err)
++	data, err := os.ReadFile(mh3.file)
++	require.NoError(t, err)
++	assert.NotContains(t, string(data), "\t-\n")
 +}

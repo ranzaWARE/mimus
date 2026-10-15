@@ -181,6 +181,13 @@ var plistTmpl = template.Must(template.New("plist").Parse(`<?xml version="1.0" e
         <string>--rc</string>
         <string>--rc-addr</string>
         <string>127.0.0.1:5572</string>
+        <!-- porta fissa e handle stabili: quando il servizio riparte
+             (aggiornamento, «Riavvia collegamento», errore) la cartella
+             resta collegata e il nuovo processo la riprende -->
+        <string>--addr</string>
+        <string>127.0.0.1:5574</string>
+        <string>--nfs-cache-type</string>
+        <string>mimus</string>
     </array>
     <!-- l'app MIMUS è responsabile del servizio: permesso «Rete locale» e voce in Elementi login -->
     <key>AssociatedBundleIdentifiers</key>
@@ -192,7 +199,7 @@ var plistTmpl = template.Must(template.New("plist").Parse(`<?xml version="1.0" e
     <key>KeepAlive</key>
     <true/>
     <key>ThrottleInterval</key>
-    <integer>30</integer>
+    <integer>10</integer>
 </dict>
 </plist>
 `))
