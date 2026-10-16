@@ -32,7 +32,8 @@ BP="$(brew --prefix samba 2>/dev/null)/"
 SMBD="$(find "$BP" -name smbd \( -type f -o -type l \) 2>/dev/null | head -1)"
 SMBPASSWD="$(find "$BP" -name smbpasswd \( -type f -o -type l \) 2>/dev/null | head -1)"
 echo "Samba: $SMBD $SMBPASSWD"
-[ -x "$SMBD" ] || SMBD="$(ls "$BP"/sbin/smbd "$BP"/libexec/*/smbd "$(brew --prefix)"/sbin/smbd 2>/dev/null | head -1)"
+# Homebrew lo chiama samba-dot-org-smbd (smbd è quello di macOS)
+[ -x "$SMBD" ] || SMBD="$(ls "$BP"/sbin/samba-dot-org-smbd "$BP"/sbin/smbd 2>/dev/null | head -1)"
 [ -x "$SMBD" ] || { echo "::error::manca smbd (brew install samba): sbin: $(ls -la "$BP/sbin" 2>&1 | enc) libexec: $(ls "$BP/libexec" 2>&1 | head -20 | enc) prefix sbin: $(ls "$(brew --prefix)/sbin" 2>&1 | head -20 | enc)"; exit 1; }
 cat > "$T/smb.conf" <<EOF
 [global]
@@ -56,7 +57,7 @@ cat > "$T/smb.conf" <<EOF
 EOF
 printf 'Passw0rd\nPassw0rd\n' | sudo "$SMBPASSWD" -c "$T/smb.conf" -s -a "$U" >/dev/null
 srv_on(){ sudo "$SMBD" -s "$T/smb.conf" -D; sleep 2; }
-srv_off(){ sudo pkill -f "smbd -s $T/smb.conf"; sleep 5; }
+srv_off(){ sudo pkill -f -- "-s $T/smb.conf"; sleep 5; }
 srv_on
 nc -z 127.0.0.1 445 || { echo "::error::Samba non in ascolto sulla 445: $(sudo tail -n 5 "$T/run/smbd.log" 2>&1 | enc)"; exit 1; }
 
@@ -94,7 +95,7 @@ export MIMUS_UI="$T/ui.sh" MIMUS_UPDATE_URL=http://127.0.0.1:8767/latest.json
 mimus(){ printf "$1" > "$T/choices"; to 240 "$MAC/MIMUS" >/dev/null 2>&1; }
 cleanup(){ kill $WWW 2>/dev/null; launchctl bootout "gui/$(id -u)/app.mimus.agent" 2>/dev/null
     mount | grep -q " on $LINK " && { umount -f "$LINK" 2>/dev/null || diskutil unmount force "$LINK" >/dev/null 2>&1; }
-    sudo pkill -f "smbd -s $T/smb.conf"; }
+    sudo pkill -f -- "-s $T/smb.conf"; }
 trap cleanup EXIT
 
 echo "== prima configurazione"
