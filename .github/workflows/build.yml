@@ -56,6 +56,10 @@ jobs:
         run: bash tests/menubar-macos.sh
       - name: Prova dell'aggiornamento automatico
         run: bash tests/update-macos.sh
+      - name: Samba per la prova dell'app completa
+        run: brew install samba >/dev/null
+      - name: L'app completa (Samba, launchd, riavvio, crash, offline, disinstallazione)
+        run: bash scripts/ci-run.sh app-macos bash tests/app-macos.sh
       - uses: actions/upload-artifact@v4
         with:
           name: MIMUS-dmg

@@ -3,6 +3,22 @@
 Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
 `rclone-mimus version` (es. `v1.72.0-mimus-1.0.0`).
 
+## 1.7.3 — 2026-10-16
+
+- **La cartella resta collegata quando il servizio riparte** («Riavvia
+  collegamento», aggiornamento di MIMUS, riavvio automatico dopo un
+  errore). Prima veniva scollegata e ricollegata: se il Finder la stava
+  mostrando, il ricollegamento poteva fallire («risorsa occupata») e la
+  cartella non tornava, oppure tornava senza pallini. Ora il nuovo servizio
+  riprende la cartella così com'è: il Finder non se ne accorge.
+- Se il servizio si ferma per sempre (per esempio MIMUS disattivato in
+  Impostazioni di Sistema → Elementi login), la cartella viene scollegata
+  da sola dopo 30 secondi invece di restare bloccata.
+- Dopo un errore il servizio riparte entro 10 secondi (prima 30).
+- Nuova prova automatica dell'app completa su un Mac vero con un server
+  Samba vero, a ogni versione: configurazione, servizio, riavvio, crash,
+  lavoro offline, disinstallazione.
+
 ## 1.7.2 — 2026-10-15
 
 - **Pallini nel Finder dopo «Riavvia collegamento»**: sparivano finché non si

@@ -179,6 +179,7 @@ Diagnostica da Terminale: `bash scripts/status.sh`.
 | `scripts/build-mac-app.sh` | app universale (Apple Silicon + Intel), firma ad-hoc, DMG; le parti Swift si compilano solo su macOS |
 | `tests/e2e-linux.sh` | test end-to-end del modulo con Samba e FUSE (nella CI) |
 | `tests/dataloss-linux.sh` | 49 scenari di possibile perdita di dati: crash, corrente, rete, disco pieno, colleghi, offline, salvataggi di Word/AutoCAD, nomi (nella CI) |
+| `tests/app-macos.sh` | l'app completa su un Mac vero con Samba: configurazione, servizio, riavvio, crash, offline, disinstallazione (macOS, nella CI) |
 | `tests/dataloss-macos.sh` | 15 scenari che dipendono dal Mac: client NFS di macOS, scrittura su disco alla chiusura, scambio di file, maiuscole, accenti, crash (macOS, nella CI) |
 | `tests/app-smoke-linux.sh` | test dell'app: configurazione, aggiornamento, disinstallazione |
 | `tests/finder-macos.sh` | estensione del Finder: firma con sandbox, registrazione, avvio (macOS, nella CI) |
