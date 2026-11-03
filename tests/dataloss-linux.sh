@@ -445,16 +445,21 @@ rcj vfs/mimus-orphans '{}' >/dev/null
 ok "la copia segue il nome nuovo" "cmp -s $T/cache/vfs/mimus/46/rinominato.bin $S/46/rinominato.bin"
 
 echo "== 47. disco del Mac pieno durante un salvataggio"
-MC=$T/mntC; mkdir -p $MC $T/small; mount -t tmpfs -o size=30m tmpfs $T/small
+MC=$T/mntC; mkdir -p $MC $T/small
+if mount -t tmpfs -o size=30m tmpfs $T/small && mount | grep -q " on $T/small type tmpfs"; then
 ($R mount mimusb: $MC --cache-dir $T/small --vfs-cache-mode full --vfs-write-back 2s --dir-cache-time 5s \
     --contimeout 3s --rc --rc-addr 127.0.0.1:5577 --log-file $T/mountC.log --log-level INFO &)
 for i in $(seq 30); do mount | grep -q "on $MC " && break; sleep 0.5; done; sleep 1
 cat $MC/47/g.bin >/dev/null
-if head -c 40000000 /dev/urandom > $MC/47/g.bin 2>/dev/null; then echo "  (scrittura accettata)"; else echo "  (scrittura rifiutata: disco pieno)"; fi
-sleep 10
+if head -c 40000000 /dev/urandom > $MC/47/g.bin 2>/dev/null; then W47="scrittura accettata"; else W47="scrittura rifiutata: disco pieno"; fi
+echo "  ($W47)"
+waitfor "find $T/small/recuperati -name g.bin -size +1M 2>/dev/null | grep -q ." 30
 ok "sul server resta il file buono, non uno troncato" "[ \"\$(cat $S/47/g.bin)\" = originale ]"
-ok "quello che è stato scritto è messo da parte" "find $T/small/recuperati -name g.bin -size +1M | grep -q ."
-pkill -f "^$R mount mimusb:"; sleep 2; fusermount -uz $MC 2>/dev/null; umount $T/small
+ok "quello che è stato scritto è messo da parte" "find $T/small/recuperati -name g.bin -size +1M 2>/dev/null | grep -q . || { echo \"    $W47; \$(df -h $T/small | tail -1); \$(grep -E 'non riuscita|messa da parte|ERROR' $T/mountC.log | tail -n 4 | cut -c1-200)\"; false; }"
+else
+echo "::warning title=dataloss::tmpfs non disponibile: scenario 47 saltato"
+fi
+pkill -f "^$R mount mimusb:"; sleep 2; fusermount -uz $MC 2>/dev/null; umount $T/small 2>/dev/null
 
 echo "== 48. copia cancellata a mano dalla cartella interna di MIMUS"
 cat $M/48/foto.jpg >/dev/null; sleep 1
