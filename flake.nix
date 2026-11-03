@@ -1,7 +1,7 @@
 {
   description = "MIMUS: cartella del server remoto (SMB), anche offline";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
+  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-26.05";
 
   outputs =
     { self, nixpkgs }:
@@ -38,7 +38,7 @@
             programs.mimus.gnomeTray = true;
             boot.loader.grub.enable = false;
             fileSystems."/".device = "none";
-            system.stateVersion = "25.05";
+            system.stateVersion = "26.05";
           }
         ];
       };

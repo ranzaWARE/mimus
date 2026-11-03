@@ -24,7 +24,7 @@ jobs:
       - name: Samba e FUSE
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq samba fuse3 >/dev/null
+          sudo apt-get install -y -qq samba fuse3 desktop-file-utils >/dev/null
           sudo systemctl stop smbd nmbd samba-ad-dc 2>/dev/null || true
       - name: rclone-mimus per Linux (con test)
         run: TEST_LINUX=1 LINUX=1 NO_DARWIN=1 bash scripts/ci-run.sh rclone-mimus bash scripts/build-rclone.sh
