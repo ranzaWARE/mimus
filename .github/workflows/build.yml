@@ -125,6 +125,8 @@ jobs:
         run: |
           V="$(cat VERSION)"
           if ! gh release view "v$V" >/dev/null 2>&1; then echo "nessuna Release v$V"; exit 0; fi
+          # solo la prima volta: i file di una versione pubblicata non cambiano
+          if gh release view "v$V" --json assets -q '.assets[].name' | grep -q '\.deb$'; then echo "pacchetti Linux già nella Release v$V"; exit 0; fi
           ls linux
           gh release upload "v$V" linux/*.deb linux/*.deb.sha256 linux/*.AppImage linux/*.AppImage.sha256 \
             linux/*.tar.gz linux/*.tar.gz.sha256 --clobber

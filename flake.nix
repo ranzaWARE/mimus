@@ -37,7 +37,10 @@
             programs.mimus.enable = true;
             programs.mimus.gnomeTray = true;
             boot.loader.grub.enable = false;
-            fileSystems."/".device = "none";
+            fileSystems."/" = {
+              device = "none";
+              fsType = "tmpfs";
+            };
             system.stateVersion = "26.05";
           }
         ];
