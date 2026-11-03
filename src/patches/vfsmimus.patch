@@ -1411,7 +1411,7 @@ index 0000000..8c86226
 +}
 diff --git a/vfs/vfscache/mimus_test.go b/vfs/vfscache/mimus_test.go
 new file mode 100644
-index 0000000..72441a5
+index 0000000..9a3a90f
 --- /dev/null
 +++ b/vfs/vfscache/mimus_test.go
 @@ -0,0 +1,64 @@
@@ -1472,7 +1472,7 @@ index 0000000..72441a5
 +	require.NoError(t, err)
 +	for _, name := range []string{"dir/vuoti.txt", "dir/rotti.txt"} {
 +		assert.False(t, c2.State(name).Cached, name)
-+		found, _ := filepath.Glob(filepath.Join(config.GetCacheDir(), "recuperati", "*", "dir", filepath.Base(name)))
++		found, _ := filepath.Glob(filepath.Join(config.GetCacheDir(), "recuperati", "* dir⁄"+filepath.Base(name)))
 +		require.Len(t, found, 1, name)
 +		got, err := os.ReadFile(found[0])
 +		require.NoError(t, err)

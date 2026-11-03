@@ -13,6 +13,9 @@ Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
     mano, poi diventa verde.
 - Nuova chiamata del servizio `vfs/mimus-transfers` (per l'icona e per le
   prove).
+- Disco del Mac completamente pieno: il file rimasto a metà ora viene messo
+  da parte anche quando non c'è più neanche un byte libero (la cartella
+  «recuperati» è preparata all'avvio e i file ci vanno senza sottocartelle).
 
 ## 1.7.3 — 2026-10-16
 

@@ -453,10 +453,10 @@ for i in $(seq 30); do mount | grep -q "on $MC " && break; sleep 0.5; done; slee
 cat $MC/47/g.bin >/dev/null
 if head -c 40000000 /dev/urandom > $MC/47/g.bin 2>/dev/null; then W47="scrittura accettata"; else W47="scrittura rifiutata: disco pieno"; fi
 echo "  ($W47)"
-waitfor "find $T/small/recuperati -name g.bin -size +1M 2>/dev/null | grep -q ." 30
+waitfor "find $T/small/recuperati -name '*g.bin' -size +1M 2>/dev/null | grep -q ." 30
 ok "sul server resta il file buono, non uno troncato" "[ \"\$(cat $S/47/g.bin)\" = originale ]"
 D47="$W47; $(df -h $T/small | tail -1 | tr -s ' '); $(find $T/small -type f -size +100k -exec ls -la {} \; 2>/dev/null | awk '{print $5, $NF}' | tr '\n' ' '); log: $(grep -E 'non riuscita|messa da parte|ERROR|space' $T/mountC.log | tail -n 3 | cut -c21-180 | tr '\n' ' ')"
-ok "quello che è stato scritto è messo da parte [$D47]" "find $T/small/recuperati -name g.bin -size +1M 2>/dev/null | grep -q ."
+ok "quello che è stato scritto è messo da parte [$D47]" "find $T/small/recuperati -name '*g.bin' -size +1M 2>/dev/null | grep -q ."
 else
 echo "::warning title=dataloss::tmpfs non disponibile: scenario 47 saltato"
 fi
