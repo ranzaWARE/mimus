@@ -33,7 +33,7 @@ jobs:
       - name: Nessuna perdita di dati
         run: sudo -E bash scripts/ci-run.sh dataloss bash tests/dataloss-linux.sh build/rclone-mimus-linux
   build:
-    needs: linux
+    # le prove su Linux girano in parallelo e non bloccano l'app per Mac
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
