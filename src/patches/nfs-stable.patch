@@ -1,7 +1,7 @@
 diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
 --- a/cmd/nfsmount/nfsmount.go
 +++ b/cmd/nfsmount/nfsmount.go
-@@ -8,10 +8,15 @@
+@@ -8,14 +8,21 @@ package nfsmount
  import (
  	"bytes"
  	"context"
@@ -12,12 +12,18 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
  	"os/exec"
 +	"path/filepath"
  	"runtime"
++	"strings"
 +	"syscall"
 +	"time"
  
  	"github.com/rclone/rclone/cmd/mountlib"
  	"github.com/rclone/rclone/cmd/serve/nfs"
-@@ -72,7 +77,38 @@
+ 	"github.com/rclone/rclone/fs"
++	"github.com/rclone/rclone/fs/config"
+ 	"github.com/rclone/rclone/fs/config/flags"
+ 	"github.com/rclone/rclone/vfs"
+ )
+@@ -72,34 +79,76 @@ func mount(VFS *vfs.VFS, mountpoint string, opt *mountlib.Options) (asyncerrors
  	cmd = append(cmd, "localhost:"+opt.VolumeName, mountpoint)
  	fs.Debugf(nil, "Running mount command: %q", cmd)
  
@@ -28,11 +34,21 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
 +	// unmount + mount while the Finder shows the folder fails with "busy").
 +	// A mount that does not answer this server (older version, other port)
 +	// is unmounted first.
++	// A mount made with other options (an update that changes them) is
++	// unmounted and mounted again, or the new options would never apply.
 +	adopt := false
++	used := mountpoint + "\n" + strings.Join(options, " ") + "\n"
 +	if mimusIsMounted(mountpoint) {
 +		if mimusFixedPort() && mimusAnswers(mountpoint, 20*time.Second) {
-+			adopt = true
-+			fs.Logf(nil, "la cartella è ancora collegata: la riprendo così com'è")
++			if old, _ := os.ReadFile(mimusOptionsFile()); string(old) == used {
++				adopt = true
++				fs.Logf(nil, "la cartella è ancora collegata: la riprendo così com'è")
++			} else {
++				fs.Logf(nil, "la cartella è collegata con altre impostazioni: la ricollego")
++				if uerr := mimusUnmount(mountpoint); uerr != nil {
++					fs.Errorf(nil, "scollegamento non riuscito: %v", uerr)
++				}
++			}
 +		} else {
 +			fs.Logf(nil, "la cartella è ancora collegata a un servizio fermo: la scollego")
 +			if uerr := mimusUnmount(mountpoint); uerr != nil {
@@ -57,7 +73,13 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
  	if err != nil {
  		out = bytes.TrimSpace(out)
  		err = fmt.Errorf("%s: failed to mount NFS volume: %v", out, err)
-@@ -83,23 +119,21 @@
+ 		return
+ 	}
++	if !adopt {
++		_ = os.WriteFile(mimusOptionsFile(), []byte(used), 0o600)
++	}
+ 	asyncerrors = errChan
+ 	unmount = func() error {
  		if s.UnmountedExternally {
  			return nil
  		}
@@ -92,7 +114,7 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
  		} else if shutdownErr != nil {
  			return fmt.Errorf("failed to shutdown NFS server: %e", shutdownErr)
  		}
-@@ -114,3 +148,123 @@
+@@ -114,3 +163,128 @@ func mount(VFS *vfs.VFS, mountpoint string, opt *mountlib.Options) (asyncerrors
  
  	return
  }
@@ -158,6 +180,11 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
 +		last = fmt.Errorf("%s still mounted", mountpoint)
 +	}
 +	return last
++}
++
++// mimusOptionsFile: mountpoint and options of the last mount made
++func mimusOptionsFile() string {
++	return filepath.Join(config.GetCacheDir(), "nfsmount-options")
 +}
 +
 +// mimusFixedPort: the NFS server listens on a fixed port (--addr host:port)

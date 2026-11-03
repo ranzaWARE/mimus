@@ -160,6 +160,11 @@ var plistTmpl = template.Must(template.New("plist").Parse(`<?xml version="1.0" e
         <string>acdirmax=5</string>
         <string>--option</string>
         <string>nonegnamecache</string>
+        <!-- blocchi dei file gestiti sul Mac: InDesign, Office e gli altri
+             programmi bloccano il documento che aprono; senza, dicono «già
+             aperto» o «autorizzazione mancante» -->
+        <string>--option</string>
+        <string>locallocks</string>
         <!-- blocchi grandi tra il Finder e il servizio: i file già sul Mac si
              leggono a centinaia di MB/s invece di ~55 (misurato) -->
         <string>--option</string>

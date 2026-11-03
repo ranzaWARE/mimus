@@ -3,6 +3,17 @@
 Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
 `rclone-mimus version` (es. `v1.72.0-mimus-1.0.0`).
 
+## 1.8.1 — 2026-11-03
+
+- **InDesign, Office e gli altri programmi che bloccano il documento aperto**
+  ora aprono i file della cartella collegata. Prima dicevano «manca la
+  necessaria autorizzazione o il documento è già aperto»: la cartella non
+  permetteva di bloccare i file (ora i blocchi sono gestiti sul Mac).
+- All'aggiornamento la cartella viene ricollegata una volta, perché valgano
+  le impostazioni nuove (prima veniva ripresa così com'era).
+- Un file letto solo in parte da un programma che poi si ferma non resta
+  più «in scaricamento» nel menu e nel Finder.
+
 ## 1.8.0 — 2026-11-03
 
 - **Avanzamento di scaricamenti e caricamenti**:

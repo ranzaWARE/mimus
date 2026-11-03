@@ -102,6 +102,8 @@ echo "== prima configurazione"
 mimus 'Stato dettagliato\n\n'
 ok "servizio creato e avviato da launchd" "[ -f '$P' ] && waitfor '[ -n \"\$(agentpid)\" ]' 30"
 ok "cartella collegata con i file del server" "waitfor healthy 40" || diag "configurazione"
+LK=$(to 70 python3 "$ROOT/tests/lockprobe.py" "$LINK/Doc/a.txt"); echo "  (blocchi: $LK)"
+ok "i file si possono bloccare come fanno InDesign e Office [$LK]" "[ \"$LK\" = 'flock ok, fcntl ok, exlock ok, secondo rifiutato' ]"
 ok "icona nella barra dei menu in esecuzione" "waitfor 'pgrep -f MIMUSMenu >/dev/null' 20"
 ok "estensione del Finder registrata" "pluginkit -m -i app.mimus.finder 2>/dev/null | grep -q app.mimus.finder"
 ok "niente .DS_Store sulle cartelle di rete" "[ \"\$(defaults read com.apple.desktopservices DSDontWriteNetworkStores 2>/dev/null)\" = 1 ]"

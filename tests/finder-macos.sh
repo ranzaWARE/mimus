@@ -47,6 +47,8 @@ cleanup(){ osascript -e 'tell application "Finder" to close every window' >/dev/
 trap cleanup EXIT
 for _ in $(seq 60); do mount | grep -q " on $M " && break; sleep 0.5; done
 curl -s -X POST -H 'Content-Type: application/json' -d '{"path": "locale.txt"}' http://127.0.0.1:5572/vfs/mimus-download > /dev/null
+lockprobe(){ perl -e 'alarm 70; exec @ARGV' python3 "$ROOT/tests/lockprobe.py" "$1" 2>&1; }
+echo "::notice title=blocchi dei file senza locallocks (fino alla 1.8.0)::$(lockprobe "$M/locale.txt")"
 ST="$(curl -s -X POST -H 'Content-Type: application/json' -d '{"dir": ""}' http://127.0.0.1:5572/vfs/mimus-states | tr -d ' \n\t')"
 echo "stati: $ST"
 case "$ST" in *'"name":"locale.txt","state":"local"'*'"name":"remoto.txt","state":"remote"'*) echo "  OK   stati dal servizio";;
@@ -90,6 +92,20 @@ case "$AFTER" in *"collegamento ripartito"*"locale.txt=local"*) echo "  OK   pal
 sleep 25
 if mount | grep -q " on $M " && perl -e 'alarm 5; exec @ARGV' cat "$M/locale.txt" >/dev/null 2>&1; then echo "  OK   ancora collegata dopo 40 secondi"
 else echo "::error title=finder::la cartella si è scollegata dopo il riavvio"; FAILS=$((FAILS + 1)); fi
+# aggiornamento che cambia le opzioni del collegamento (1.8.1: blocchi dei
+# file): la cartella va ricollegata, non ripresa, o le opzioni nuove non
+# varrebbero fino al riavvio del Mac
+kill $PID 2>/dev/null; wait $PID 2>/dev/null
+"$R" nfsmount mimus: "$M" --cache-dir "$T/cache" --vfs-cache-mode full --option locallocks \
+    --rc --rc-addr 127.0.0.1:5572 --addr 127.0.0.1:5574 --nfs-cache-type mimus --log-file "$T/mount.log" &
+PID=$!
+back=0
+for _ in $(seq 90); do curl -s -m 2 -X POST http://127.0.0.1:5572/core/pid | grep -q pid && mount | grep -q " on $M " && { back=1; break; }; sleep 1; done
+if [ $back = 1 ] && grep -q "con altre impostazioni: la ricollego" "$T/mount.log"; then echo "  OK   opzioni nuove: cartella ricollegata"
+else echo "::error title=finder::opzioni nuove non applicate: $(grep -E 'collegat|riprovo|ricollego' "$T/mount.log" | tail -n 6 | enc)"; FAILS=$((FAILS + 1)); fi
+LK="$(lockprobe "$M/locale.txt")"
+if [ "$LK" = "flock ok, fcntl ok, exlock ok, secondo rifiutato" ]; then echo "  OK   blocchi dei file dopo l'aggiornamento"
+else echo "::error title=finder::blocchi dei file: $LK"; FAILS=$((FAILS + 1)); fi
 # servizio fermato per sempre: la cartella non deve restare appesa
 kill $PID 2>/dev/null; wait $PID 2>/dev/null
 gone=0; for _ in $(seq 75); do mount | grep -q " on $M " || { gone=1; break; }; sleep 1; done

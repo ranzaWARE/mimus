@@ -39,10 +39,10 @@ index 76aa03b..771c5c6 100644
  		// Update the node with the new details
 diff --git a/vfs/mimus.go b/vfs/mimus.go
 new file mode 100644
-index 0000000..d4e04a6
+index 0000000..a0a15b6
 --- /dev/null
 +++ b/vfs/mimus.go
-@@ -0,0 +1,713 @@
+@@ -0,0 +1,731 @@
 +package vfs
 +
 +// MIMUS: what the Finder extension needs. For the files of a folder: on
@@ -667,9 +667,23 @@ index 0000000..d4e04a6
 +// between two of them
 +var mimusSeen = struct {
 +	sync.Mutex
-+	last map[string]mimusTransfer
-+	at   map[string]time.Time
-+}{last: map[string]mimusTransfer{}, at: map[string]time.Time{}}
++	last  map[string]mimusTransfer
++	at    map[string]time.Time
++	done  map[string]int64     // bytes on this computer at the last change
++	moved map[string]time.Time // when they last grew
++}{last: map[string]mimusTransfer{}, at: map[string]time.Time{}, done: map[string]int64{}, moved: map[string]time.Time{}}
++
++// a download that does not grow for this long is not shown: the app that
++// was reading the file stopped (it read only a part, or gave up), even if
++// the file is still open
++const mimusStalled = 10 * time.Second
++
++func mimusForget(name string) {
++	delete(mimusSeen.last, name)
++	delete(mimusSeen.at, name)
++	delete(mimusSeen.done, name)
++	delete(mimusSeen.moved, name)
++}
 +
 +func mimusInt(v any) int64 {
 +	switch x := v.(type) {
@@ -724,21 +738,25 @@ index 0000000..d4e04a6
 +	for name, e := range mimusSeen.last {
 +		_, active := cur[name]
 +		if (e.Up && !active) || now.Sub(mimusSeen.at[name]) > 5*time.Second {
-+			delete(mimusSeen.last, name)
-+			delete(mimusSeen.at, name)
++			mimusForget(name)
 +			continue
 +		}
 +		if !e.Up && vfs.cache != nil {
 +			st := vfs.cache.State(name)
 +			if st.Complete || st.Dirty {
-+				delete(mimusSeen.last, name)
-+				delete(mimusSeen.at, name)
++				mimusForget(name)
 +				continue
 +			}
 +			if st.Size > 0 {
 +				e.Size = st.Size
 +			}
 +			e.Done = st.Present
++			if d, ok := mimusSeen.done[name]; !ok || d != e.Done {
++				mimusSeen.done[name], mimusSeen.moved[name] = e.Done, now
++			}
++			if now.Sub(mimusSeen.moved[name]) > mimusStalled {
++				continue
++			}
 +		}
 +		if !active {
 +			e.Speed = 0

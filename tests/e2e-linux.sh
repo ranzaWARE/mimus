@@ -191,6 +191,13 @@ ok "scaricamento in corso con byte, dimensione e velocità" "python3 -c 'import 
 ok "nel Finder: «downloading» con la percentuale" "python3 -c 'import json,sys; e=[x for x in json.load(open(sys.argv[1]))[\"entries\"] if x[\"name\"]==\"grande.bin\"]; sys.exit(not (e and e[0][\"state\"]==\"downloading\" and 0 < e[0].get(\"progress\",0) < 100))' $T/st.json"
 for i in $(seq 30); do sleep 1; rcj vfs/mimus-transfers '{}' | grep -q grande.bin || break; done
 ok "finito: non è più in corso ed è sul Mac" "! rcj vfs/mimus-transfers '{}' | grep -q grande.bin && states Doc | grep -q 'grande.bin=local'"
+# un programma legge solo una parte e si ferma tenendo il file aperto (InDesign
+# che non riesce ad aprirlo): non deve restare «in scaricamento» per sempre
+head -c 60000000 /dev/urandom > $S/Doc/parziale.bin; sleep 11; ls $M/Doc >/dev/null
+(python3 -c "import sys,time; f=open(sys.argv[1],'rb'); f.read(4000000); time.sleep(40)" $M/Doc/parziale.bin &); sleep 3
+ok "lettura parziale: in corso mentre legge" "rcj vfs/mimus-transfers '{}' | grep -q parziale.bin"
+sleep 20
+ok "il programma smette di leggere: non resta «in scaricamento»" "! rcj vfs/mimus-transfers '{}' | grep -q parziale.bin && ! rcj vfs/mimus-states '{\"dir\": \"Doc\"}' | grep -q downloading"
 stopm; EXTRA=""; startm
 
 stopm; srv_off

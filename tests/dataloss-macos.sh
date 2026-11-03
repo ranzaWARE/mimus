@@ -20,7 +20,7 @@ waitfor(){ local end=$((SECONDS + $2)); while [ $SECONDS -lt $end ]; do eval "$1
 unmount(){ mount | grep -q " on $M " && { umount -f "$M" 2>/dev/null || diskutil unmount force "$M" >/dev/null 2>&1; }; true; }
 start(){
     "$R" nfsmount mimus: "$M" --cache-dir "$T/cache" --vfs-cache-mode full --vfs-write-back 2s \
-        --dir-cache-time 5s --poll-interval 5s --option acdirmax=5 --option nonegnamecache \
+        --dir-cache-time 5s --poll-interval 5s --option acdirmax=5 --option nonegnamecache --option locallocks \
         --option rsize=1048576 --option wsize=1048576 --option readahead=64 \
         --log-file "$T/mount.log" --log-level DEBUG &
     PID=$!
@@ -32,7 +32,7 @@ stop(){ kill $PID 2>/dev/null; wait $PID 2>/dev/null; unmount; }
 crash(){ kill -9 $PID 2>/dev/null; wait $PID 2>/dev/null; sleep 1; unmount; }
 trap 'stop; rm -rf "$T"' EXIT
 
-mkdir -p "$M"; for n in $(seq 15); do mkdir -p "$S/$n"; done
+mkdir -p "$M"; for n in $(seq 16); do mkdir -p "$S/$n"; done
 echo "v1" > "$S/1/a.txt"
 echo "maiuscole" > "$S/2/Caso.txt"
 mkdir -p "$S/3/Cartella"; echo "dentro la cartella" > "$S/3/Cartella/x.txt"
@@ -44,6 +44,7 @@ head -c 20000000 /dev/urandom > "$T/grande.bin"
 echo "v1" > "$S/9/a.txt"
 echo "A" > "$S/11/a.txt"; echo "B" > "$S/11/b.txt"
 echo "A" > "$S/12/a.txt"; echo "B" > "$S/12/b.txt"
+echo "documento" > "$S/16/Tavola.indd"
 start
 ls -R "$M" >/dev/null; cat "$M/1/a.txt" "$M/2/Caso.txt" "$M/3/Cartella/x.txt" "$M/6/a.txt" "$M/7/doc.txt" "$M/9/a.txt" >/dev/null
 
@@ -141,6 +142,24 @@ echo "== 15. fsync e poi il servizio si ferma di colpo"
 python3 -c "import os,sys; f=open(sys.argv[1],'w'); f.write('dopo fsync'); f.flush(); os.fsync(f.fileno()); f.close()" "$M/15/f.txt"
 crash; start
 ok "dopo il riavvio arriva sul server" "waitfor 'grep -qs \"dopo fsync\" \"$S/15/f.txt\"' 30"
+
+echo "== 16. documento aperto come fa InDesign (file bloccato e file di blocco accanto)"
+L=$(perl -e 'alarm 70; exec @ARGV' python3 "$ROOT/tests/lockprobe.py" "$M/16/Tavola.indd"); echo "  ($L)"
+ok "il file si può bloccare, e non due volte [$L]" "[ \"$L\" = 'flock ok, fcntl ok, exlock ok, secondo rifiutato' ]"
+perl -e 'alarm 60; exec @ARGV' python3 - "$M/16" <<'EOP'
+import os, sys
+d = sys.argv[1]
+doc = os.path.join(d, "Tavola.indd")
+lock = os.path.join(d, "~Tavola~a1b2c3.idlk")
+open(lock, "w").write("utente")
+fd = os.open(doc, os.O_RDWR | os.O_EXLOCK | os.O_NONBLOCK)
+os.read(fd, 100)
+os.lseek(fd, 0, 0); os.ftruncate(fd, 0); os.write(fd, b"documento modificato\n"); os.fsync(fd)
+os.close(fd)
+os.unlink(lock)
+EOP
+ok "la modifica arriva sul server" "waitfor 'grep -qs \"documento modificato\" \"$S/16/Tavola.indd\"' 20"
+ok "il file di blocco non resta sul server" "waitfor '! ls \"$S/16/\" | grep -q idlk' 20"
 
 stop
 echo
