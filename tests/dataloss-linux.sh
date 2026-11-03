@@ -448,7 +448,7 @@ echo "== 47. disco del Mac pieno durante un salvataggio"
 MC=$T/mntC; mkdir -p $MC $T/small
 if mount -t tmpfs -o size=30m tmpfs $T/small && mount | grep -q " on $T/small type tmpfs"; then
 ($R mount mimusb: $MC --cache-dir $T/small --vfs-cache-mode full --vfs-write-back 2s --dir-cache-time 5s \
-    --contimeout 3s --rc --rc-addr 127.0.0.1:5577 --log-file $T/mountC.log --log-level INFO &)
+    --contimeout 3s --rc --rc-addr 127.0.0.1:5577 --log-file $T/mountC.log --log-level DEBUG &)
 for i in $(seq 30); do mount | grep -q "on $MC " && break; sleep 0.5; done; sleep 1
 cat $MC/47/g.bin >/dev/null
 if head -c 40000000 /dev/urandom > $MC/47/g.bin 2>/dev/null; then W47="scrittura accettata"; else W47="scrittura rifiutata: disco pieno"; fi
@@ -456,6 +456,8 @@ echo "  ($W47)"
 waitfor "find $T/small/recuperati -name '*g.bin' -size +1M 2>/dev/null | grep -q ." 30
 ok "sul server resta il file buono, non uno troncato" "[ \"\$(cat $S/47/g.bin)\" = originale ]"
 D47="$W47; $(df -h $T/small | tail -1 | tr -s ' '); $(find $T/small -type f -size +100k -exec ls -la {} \; 2>/dev/null | awk '{print $5, $NF}' | tr '\n' ' '); log: $(grep -E 'non riuscita|messa da parte|ERROR|space' $T/mountC.log | tail -n 3 | cut -c21-180 | tr '\n' ' ')"
+find $T/small/recuperati -name '*g.bin' -size +1M 2>/dev/null | grep -q . || \
+    echo "::warning title=D47::$( { ls -la $T/small $T/small/recuperati 2>&1; uname -r; grep -E '47/g.bin|recuperati|messa da parte|non riuscita' $T/mountC.log | grep -v 'Write\|_writeAt\|ReadAt\|_readAt' | tail -n 40; } | cut -c1-230 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}')"
 ok "quello che è stato scritto è messo da parte [$D47]" "find $T/small/recuperati -name '*g.bin' -size +1M 2>/dev/null | grep -q ."
 else
 echo "::warning title=dataloss::tmpfs non disponibile: scenario 47 saltato"
