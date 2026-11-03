@@ -134,7 +134,7 @@ VER=$(cat "$ROOT/VERSION"); mkdir -p $T/www
 printf '{"tag_name":"v%s","body":"","assets":[]}' "$VER" > $T/www/latest.json
 (cd $T/www && exec python3 -m http.server 8766 >/dev/null 2>&1) &
 WWW=$!
-export MIMUS_UI=$T/ui.sh PATH=$T/stubs:$PATH MIMUS_UPDATE_URL=http://127.0.0.1:8766/latest.json
+export MIMUS_PLATFORM=mac MIMUS_UI=$T/ui.sh PATH=$T/stubs:$PATH MIMUS_UPDATE_URL=http://127.0.0.1:8766/latest.json
 
 echo "== primo avvio: configurazione"
 printf 'Stato dettagliato\n\n' > $T/choices

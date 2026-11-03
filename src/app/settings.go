@@ -31,7 +31,9 @@ func settingsMenu(p paths, s *settings) paths {
 			fmt.Sprintf("Togli dal Mac i file non usati da: %d giorni", s.RetentionDays),
 			fmt.Sprintf("Spazio minimo libero sul disco: %d GB", s.MinFreeGB),
 			fmt.Sprintf("Novità dei colleghi visibili entro: %d minuti", s.RefreshMin),
-			"Aggiornamenti automatici di MIMUS: " + yesNo(!s.NoAutoUpdate),
+		}
+		if canSelfUpdate(p) {
+			items = append(items, "Aggiornamenti automatici di MIMUS: "+yesNo(!s.NoAutoUpdate))
 		}
 		if hasMenuHelper(p) {
 			items = append(items, "Icona nella barra dei menu: "+yesNo(!s.NoMenuIcon))
@@ -39,7 +41,9 @@ func settingsMenu(p paths, s *settings) paths {
 		if hasFinderExtension(p) {
 			items = append(items, "Pallini e menu nel Finder (sul Mac / solo sul server): "+yesNo(!s.NoFinderMarks))
 		}
-		items = append(items, "Viste del Finder (.DS_Store) salvate sul server: "+yesNo(s.FinderDSStore))
+		if !onLinux {
+			items = append(items, "Viste del Finder (.DS_Store) salvate sul server: "+yesNo(s.FinderDSStore))
+		}
 		c := choose("Impostazioni: scegli cosa cambiare.\nLe modifiche vengono applicate quando premi «Fine».", items, "Modifica", "Fine")
 		switch {
 		case c == "":

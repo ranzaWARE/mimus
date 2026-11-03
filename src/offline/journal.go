@@ -545,6 +545,9 @@ func (f *Fs) applyOp(ctx context.Context, op jop) error {
 	return nil
 }
 
+// deviceName: this computer in the conflict copies (option "device")
+var deviceName = "Mac"
+
 // conflictName returns "dir/name (conflitto Mac 2026-10-13 1430).ext",
 // with " n" added for n > 1
 func conflictName(remote string, n int) string {
@@ -554,7 +557,7 @@ func conflictName(remote string, n int) string {
 	if base == "" {
 		base, ext = leaf, ""
 	}
-	tag := "conflitto Mac " + time.Now().Format("2006-01-02 1504")
+	tag := "conflitto " + deviceName + " " + time.Now().Format("2006-01-02 1504")
 	if n > 1 {
 		tag += fmt.Sprintf(" %d", n)
 	}

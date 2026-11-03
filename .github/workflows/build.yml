@@ -27,11 +27,107 @@ jobs:
           sudo apt-get install -y -qq samba fuse3 >/dev/null
           sudo systemctl stop smbd nmbd samba-ad-dc 2>/dev/null || true
       - name: rclone-mimus per Linux (con test)
-        run: TEST_LINUX=1 bash scripts/ci-run.sh rclone-mimus bash scripts/build-rclone.sh
+        run: TEST_LINUX=1 LINUX=1 NO_DARWIN=1 bash scripts/ci-run.sh rclone-mimus bash scripts/build-rclone.sh
       - name: Prova completa con Samba
         run: sudo -E bash scripts/ci-run.sh e2e bash tests/e2e-linux.sh build/rclone-mimus-linux
       - name: Nessuna perdita di dati
         run: sudo -E bash scripts/ci-run.sh dataloss bash tests/dataloss-linux.sh build/rclone-mimus-linux
+      - name: Test dell'app (Go) e dell'estensione del file manager
+        run: |
+          (cd src/app && bash ../../scripts/ci-run.sh app-go go test ./...)
+          bash scripts/ci-run.sh nautilus python3 tests/nautilus-ext.py
+      - name: Pacchetti .deb, AppImage e tar
+        run: |
+          curl -fsSL -o /tmp/appimagetool https://github.com/AppImage/appimagetool/releases/download/1.9.0/appimagetool-x86_64.AppImage \
+            || curl -fsSL -o /tmp/appimagetool https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x /tmp/appimagetool
+          APPIMAGETOOL=/tmp/appimagetool bash scripts/ci-run.sh pacchetti bash scripts/build-linux.sh
+      - name: L'app completa per Linux (systemd dell'utente, FUSE, Samba, vassoio, disinstallazione)
+        run: |
+          sudo loginctl enable-linger "$(id -un)"
+          export XDG_RUNTIME_DIR=/run/user/$(id -u) DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/$(id -u)/bus
+          for i in $(seq 30); do [ -S "$XDG_RUNTIME_DIR/bus" ] && break; sleep 1; done
+          systemctl --user is-system-running || true
+          mkdir -p /tmp/pkg && tar -C /tmp/pkg -xzf build/linux/mimus-*-linux-amd64.tar.gz
+          bash scripts/ci-run.sh app-linux bash tests/app-linux.sh /tmp/pkg/mimus
+      - name: Installazione del .deb su Debian e Ubuntu
+        run: |
+          for img in debian:trixie debian:bookworm ubuntu:24.04; do
+            echo "== $img"
+            docker run --rm -v "$PWD/build/linux:/pkgs:ro" "$img" bash -ec '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq >/dev/null
+              apt-get install -y -qq /pkgs/mimus_*_amd64.deb >/dev/null
+              mimus --version
+              /usr/lib/mimus/rclone-mimus version | head -1
+              test -f /usr/share/applications/mimus.desktop
+              test -f /usr/share/icons/hicolor/256x256/apps/mimus.png
+              dpkg -s mimus | grep -q "^Status: install ok installed"
+              apt-get remove -y -qq mimus >/dev/null
+              test ! -e /usr/bin/mimus
+              echo ok'
+          done
+      - name: AppImage
+        run: |
+          A=$(ls build/linux/MIMUS-*-x86_64.AppImage)
+          chmod +x "$A"
+          test "$("$A" --version)" = "$(cat VERSION)"
+          test "$(APPIMAGE_EXTRACT_AND_RUN=1 "$A" --version)" = "$(cat VERSION)"
+          file build/linux/MIMUS-*-aarch64.AppImage | grep -q -i "aarch64\|ARM"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MIMUS-linux
+          path: build/linux/*
+  nix:
+    # pacchetto Nix compilato dai sorgenti e modulo NixOS
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cachix/install-nix-action@v31
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+      - name: flake.lock
+        run: |
+          [ -f flake.lock ] || nix flake lock
+          cat flake.lock
+      - name: Pacchetto
+        run: bash scripts/ci-run.sh nix nix build .#mimus -L
+      - name: Prova del pacchetto
+        run: |
+          test "$(./result/bin/mimus --version)" = "$(cat VERSION)"
+          ./result/libexec/mimus/rclone-mimus version | head -1 | grep -q "mimus-$(cat VERSION)"
+          ./result/libexec/mimus/rclone-mimus help backends | grep -q offline
+          test -f ./result/share/applications/mimus.desktop
+          grep -q "per Linux" ./result/libexec/mimus/Guida.html
+      - name: Modulo NixOS
+        run: |
+          nix eval --json .#nixosConfigurations.prova.config.environment.systemPackages --apply 'map (p: p.name)' | tee /tmp/pk.json
+          grep -q '"mimus-' /tmp/pk.json && grep -q zenity /tmp/pk.json && grep -q nautilus-python /tmp/pk.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flake-lock
+          path: flake.lock
+  linux-release:
+    # i pacchetti Linux nella Release creata dal job del Mac (non la ritardano)
+    needs: [linux, build]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: MIMUS-linux
+          path: linux
+      - name: Carica nella Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="$(cat VERSION)"
+          if ! gh release view "v$V" >/dev/null 2>&1; then echo "nessuna Release v$V"; exit 0; fi
+          ls linux
+          gh release upload "v$V" linux/*.deb linux/*.deb.sha256 linux/*.AppImage linux/*.AppImage.sha256 \
+            linux/*.tar.gz linux/*.tar.gz.sha256 --clobber
   build:
     # le prove su Linux girano in parallelo e non bloccano l'app per Mac
     runs-on: macos-latest

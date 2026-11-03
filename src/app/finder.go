@@ -13,10 +13,14 @@ func finderAppex(p paths) string {
 	return filepath.Join(p.bundle, "Contents", "PlugIns", "MIMUS Finder.appex")
 }
 
-func hasFinderExtension(p paths) bool { return fileExists(finderAppex(p)) }
+func hasFinderExtension(p paths) bool { return onLinux || fileExists(finderAppex(p)) }
 
 // setFinderBadges turns the Finder extension on or off
 func setFinderBadges(p paths, on bool) {
+	if onLinux {
+		linuxSetBadges(p, on)
+		return
+	}
 	if !hasFinderExtension(p) {
 		return
 	}
@@ -30,6 +34,10 @@ func setFinderBadges(p paths, on bool) {
 
 // removeFinderExtension: uninstall
 func removeFinderExtension(p paths) {
+	if onLinux {
+		linuxSetBadges(p, false)
+		return
+	}
 	if !hasFinderExtension(p) {
 		return
 	}

@@ -24,6 +24,15 @@ func main() {
 		fmt.Println(appVersion)
 		return
 	}
+	if onLinux && len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "ask", "password", "info": // dialogs of the service (offline backend, ui=)
+			os.Exit(backendUI(os.Args[1:]))
+		case "tray":
+			runTray(getPaths())
+			return
+		}
+	}
 	p := getPaths()
 	if len(os.Args) > 1 && os.Args[1] == "--check-update" { // daily agent
 		backgroundCheck(p)
@@ -33,7 +42,7 @@ func main() {
 
 	// opened from the DMG or from Downloads (macOS "translocation"): the
 	// service would point to a temporary copy
-	if strings.Contains(p.exe, "/AppTranslocation/") || strings.HasPrefix(p.bundle, "/Volumes/") {
+	if !onLinux && (strings.Contains(p.exe, "/AppTranslocation/") || strings.HasPrefix(p.bundle, "/Volumes/")) {
 		info("Prima trascina «MIMUS» nella cartella Applicazioni, poi aprila da lì.")
 		return
 	}
@@ -67,6 +76,9 @@ func main() {
 	setMenuIcon(p, !s.NoMenuIcon)
 	setFinderBadges(p, !s.NoFinderMarks)
 	setDSStore(p, &s, s.FinderDSStore)
+	if onLinux {
+		setMenuEntry(p, true)
+	}
 	if !offer && !s.NoAutoUpdate {
 		if r, ok := availableUpdate(5 * time.Second); ok && offerUpdate(p, r) {
 			return // the new version has been started
@@ -116,8 +128,13 @@ func configure(p paths, s *settings) (paths, bool) {
 			info("Configurazione non riuscita:\n" + out)
 			return p, false
 		}
-		if out, err := run(p.rclone, "config", "create", "mimus", "offline",
-			"remote=remoto:"+s.Share, "probe="+s.Host+":445", fmt.Sprintf("min_free=%dG", s.MinFreeGB)); err != nil {
+		offArgs := []string{"config", "create", "mimus", "offline",
+			"remote=remoto:" + s.Share, "probe=" + s.Host + ":445", fmt.Sprintf("min_free=%dG", s.MinFreeGB)}
+		if onLinux {
+			// dialogs of the service through this app (zenity/kdialog)
+			offArgs = append(offArgs, "ui="+uiProgram(p), "device=PC")
+		}
+		if out, err := run(p.rclone, offArgs...); err != nil {
 			info("Configurazione non riuscita:\n" + out)
 			return p, false
 		}
@@ -152,7 +169,12 @@ func configure(p paths, s *settings) (paths, bool) {
 	}
 	if waitMount(p, 20*time.Second) {
 		if dialog("Fatto: la cartella è collegata e si ricollegherà da sola a ogni accensione.", "Apri cartella", "OK", "Apri cartella") == "Apri cartella" {
-			_, _ = run("open", p.mount)
+			openPath(p.mount)
+		}
+		if onLinux {
+			if h := trayHint(); h != "" {
+				info(h)
+			}
 		}
 	} else {
 		info("Configurazione salvata, ma la cartella non risulta ancora collegata.\nControlla rete/VPN e credenziali, poi guarda «Ultimi errori».")
@@ -262,7 +284,7 @@ func checkConnection(p paths, s settings) string {
 		}
 		time.Sleep(2 * time.Second)
 	}
-	if localNetworkDenied(err) {
+	if !onLinux && localNetworkDenied(err) {
 		return "macOS non permette a MIMUS di raggiungere il server sulla rete locale.\n\nVai in Impostazioni di Sistema → Privacy e sicurezza → Rete locale, attiva MIMUS, poi premi «Correggi»."
 	}
 	if err != nil {
@@ -306,7 +328,8 @@ func homeFolderTarget(p paths, name string) (string, error) {
 	if name == "" || name == "." || name == ".." || strings.ContainsAny(name, "/:") || strings.HasPrefix(name, ".") {
 		return "", fmt.Errorf("«%s» non è un nome valido: niente «/», «:» e non può iniziare con un punto.", name)
 	}
-	for _, r := range []string{"Applications", "Desktop", "Documents", "Downloads", "Library", "Movies", "Music", "Pictures", "Public"} {
+	for _, r := range []string{"Applications", "Desktop", "Documents", "Downloads", "Library", "Movies", "Music", "Pictures", "Public",
+		"Templates", "Videos", "Scrivania", "Documenti", "Scaricati", "Musica", "Immagini", "Pubblici", "Modelli", "Video", "snap"} {
 		if strings.EqualFold(name, r) {
 			return "", fmt.Errorf("«%s» è una cartella di sistema: scegli un altro nome.", name)
 		}
@@ -377,7 +400,7 @@ func menu(p paths, s *settings) {
 			return
 		case "Apri cartella":
 			if isMounted(p) {
-				_, _ = run("open", p.mount)
+				openPath(p.mount)
 				return
 			}
 			info("La cartella non è collegata.\nProva «Riavvia collegamento» o guarda «Ultimi errori».")
@@ -417,7 +440,10 @@ func menu(p paths, s *settings) {
 				return
 			}
 		case "Guida":
-			_, _ = run("open", filepath.Join(p.bundle, "Contents", "Resources", "Guida.html"))
+			if onLinux {
+				_, _ = installEngine(p) // the guide is copied with the engine
+			}
+			openPath(guidePath(p))
 		case "Disinstalla":
 			if uninstall(p) {
 				return
@@ -429,7 +455,7 @@ func menu(p paths, s *settings) {
 func reportMount(p paths) {
 	if waitMount(p, 15*time.Second) {
 		if dialog("Cartella collegata.", "OK", "Apri cartella", "OK") == "Apri cartella" {
-			_, _ = run("open", p.mount)
+			openPath(p.mount)
 		}
 		return
 	}
@@ -511,6 +537,10 @@ func openLog(p paths) {
 		info("Il file di log non esiste ancora.")
 		return
 	}
+	if onLinux {
+		openPath(p.logFile)
+		return
+	}
 	_, _ = run("open", "-a", "Console", p.logFile)
 }
 
@@ -553,7 +583,13 @@ func uninstall(p paths) bool {
 		return false
 	}
 	stopAgent(p)
+	if onLinux {
+		_, _ = systemctl("disable", serviceName)
+	}
 	_ = os.Remove(p.plist)
+	if onLinux {
+		_, _ = systemctl("daemon-reload")
+	}
 	setUpdater(p, false)
 	setMenuIcon(p, false)
 	removeFinderExtension(p)
@@ -567,13 +603,28 @@ func uninstall(p paths) bool {
 			wipe = ok && strings.EqualFold(strings.TrimSpace(v), "OK")
 		}
 	}
+	if onLinux {
+		setMenuEntry(p, false)
+		removeIcons()
+		_ = os.RemoveAll(engineDir(p))
+		_ = os.Remove(guidePath(p))
+		_ = os.Remove(trayLock(p))
+	}
 	if wipe {
 		_ = os.RemoveAll(p.cache) // anche se spostata fuori da Application Support
 		_ = os.RemoveAll(p.appSupport)
+		if onLinux {
+			_ = os.RemoveAll(p.data)
+			_ = os.RemoveAll(filepath.Dir(p.logFile))
+		}
 		_, _ = run(p.rclone, "config", "delete", "mimus")
 		_, _ = run(p.rclone, "config", "delete", "remoto")
 	}
 	_ = os.Remove(p.mount) // only if empty
+	if onLinux {
+		info(uninstallHint(p))
+		return true
+	}
 	info("Fatto. Ora trascina «MIMUS» dalla cartella Applicazioni nel Cestino.")
 	_, _ = run("open", "-R", p.bundle)
 	return true

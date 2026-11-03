@@ -115,6 +115,11 @@ func init() {
 			Default:  "",
 			Advanced: true,
 			Help:     "Where to store listings and journal (default: <cache-dir>/offline/<name>).",
+		}, {
+			Name:     "device",
+			Default:  "Mac",
+			Advanced: true,
+			Help:     "Name of this computer in the names of conflict copies («conflitto Mac …»).",
 		}},
 	})
 }
@@ -137,6 +142,7 @@ type Options struct {
 	RestartOnPassword bool          `config:"restart_on_password"`
 	LowLevelRetries   int           `config:"low_level_retries"`
 	Dir               string        `config:"dir"`
+	Device            string        `config:"device"`
 }
 
 // Fs wraps another Fs
@@ -187,6 +193,9 @@ func NewFs(ctx context.Context, name, rpath string, m configmap.Mapper) (fs.Fs, 
 	}
 	// few low level retries: a wrong password must not lock the account
 	bctx, ci := fs.AddConfig(ctx)
+	if opt.Device != "" {
+		deviceName = opt.Device
+	}
 	if opt.LowLevelRetries > 0 {
 		ci.LowLevelRetries = opt.LowLevelRetries
 	}

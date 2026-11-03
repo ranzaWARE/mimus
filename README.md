@@ -8,13 +8,14 @@
 <h1 align="center">MIMUS</h1>
 
 <p align="center">
-  <b>La cartella del server sul tuo Mac.<br>Veloce come un disco, anche quando la rete non c'è.</b>
+  <b>La cartella del server sul tuo Mac (e su Linux).<br>Veloce come un disco, anche quando la rete non c'è.</b>
 </p>
 
 <p align="center">
   <a href="https://github.com/ranzaWARE/mimus/releases/latest"><img alt="Scarica" src="https://img.shields.io/github/v/release/ranzaWARE/mimus?label=scarica&color=34c759"></a>
   <img alt="macOS 11+" src="https://img.shields.io/badge/macOS-11%2B-000000?logo=apple">
   <img alt="Apple Silicon e Intel" src="https://img.shields.io/badge/Apple%20Silicon%20%2B%20Intel-universale-555555">
+  <img alt="Linux: deb, AppImage, NixOS" src="https://img.shields.io/badge/Linux-deb%20%C2%B7%20AppImage%20%C2%B7%20NixOS-fcc624?logo=linux&logoColor=black">
   <a href="LICENSE"><img alt="Licenza Apache 2.0" src="https://img.shields.io/badge/licenza-Apache%202.0-0a6cdf"></a>
   <img alt="Gratis" src="https://img.shields.io/badge/prezzo-gratis-ff9500">
 </p>
@@ -111,6 +112,18 @@ Fatto: la cartella compare nella tua cartella Inizio e si ricollega da sola a og
 
 La **guida illustrata** è nel DMG e dentro l'app (menu → *Guida*).
 
+## 🐧 Su Linux
+
+Stessa app, stesso motore, stesse prove contro la perdita di dati: la cartella si collega con FUSE, il dinosauro sta nel vassoio (KDE, Cinnamon, XFCE, MATE; GNOME con l'estensione AppIndicator) e i pallini compaiono in Nautilus, Nemo e Caja.
+
+| Sistema | Installazione |
+|---|---|
+| Debian, Ubuntu, Mint | `sudo apt install ./mimus_<versione>_amd64.deb` |
+| NixOS | flake `github:ranzaWARE/mimus`: `imports = [ mimus.nixosModules.default ];` e `programs.mimus.enable = true;` |
+| tutte le altre | `MIMUS-<versione>-x86_64.AppImage`: rendilo eseguibile e aprilo |
+
+Poi apri **MIMUS** dal menu delle applicazioni e rispondi alle stesse domande. Anche per arm64/aarch64. Con il `.deb` e l'AppImage gli aggiornamenti arrivano da soli; su NixOS con il sistema.
+
 ## 🛡️ Fatto per non perdere niente
 
 - Un file lascia il Mac **solo** se è sul server, uguale, e non ha modifiche da caricare.
@@ -160,6 +173,8 @@ MIMUS.app/Contents/PlugIns/MIMUS Finder.appex          estensione del Finder (sr
 ~/Library/Logs/MIMUS.log                           log (5 file da 10 MB a rotazione)
 ```
 
+Su Linux: programma in `/usr/lib/mimus` (o AppImage, o Nix), servizio `~/.config/systemd/user/mimus.service` con una copia del motore in `~/.local/share/mimus/bin`, icona `mimus tray` da `~/.config/autostart`, estensione `~/.local/share/nautilus-python/extensions/mimus.py`, impostazioni `~/.config/mimus`, cache `~/.local/share/mimus/cache`, log `~/.local/state/mimus/mimus.log`.
+
 La password è solo in `~/.config/rclone/rclone.conf`, offuscata.
 Diagnostica da Terminale: `bash scripts/status.sh`.
 </details>
@@ -169,7 +184,7 @@ Diagnostica da Terminale: `bash scripts/status.sh`.
 
 | | |
 |---|---|
-| `src/app/` | l'app (Go, nessuna dipendenza esterna) |
+| `src/app/` | l'app (Go) per Mac e Linux; su Linux anche l'icona nel vassoio (`tray_linux.go`, D-Bus con una copia ridotta di `fyne.io/systray`) e l'estensione del file manager (`linuxfiles/mimus.py`) |
 | `src/offline/` | modulo "offline" per rclone, con unit test |
 | `src/patches/` | patch a rclone: cache VFS (conflitti, pulizia sicura, metadati a prova di blackout), date delle cartelle, stati per il Finder (`vfsmimus`), NFS (creazione esclusiva, scritture stabili e COMMIT) |
 | `src/finder/` | estensione del Finder (Swift, sandbox): pallini e menu; usa rc `vfs/mimus-*` |
@@ -178,10 +193,14 @@ Diagnostica da Terminale: `bash scripts/status.sh`.
 | `scripts/build-rclone.sh` | scarica rclone, applica patch e modulo, lancia i test, compila |
 | `scripts/build-mac-app.sh` | app universale (Apple Silicon + Intel), firma ad-hoc, DMG; le parti Swift si compilano solo su macOS |
 | `tests/e2e-linux.sh` | test end-to-end del modulo con Samba e FUSE (nella CI) |
+| `scripts/build-linux.sh` | pacchetti per Linux: `.deb`, AppImage, tar (amd64 e arm64) |
+| `flake.nix`, `nix/` | pacchetto Nix dai sorgenti e modulo NixOS |
 | `tests/dataloss-linux.sh` | 49 scenari di possibile perdita di dati: crash, corrente, rete, disco pieno, colleghi, offline, salvataggi di Word/AutoCAD, nomi (nella CI) |
 | `tests/app-macos.sh` | l'app completa su un Mac vero con Samba: configurazione, servizio, riavvio, crash, offline, disinstallazione (macOS, nella CI) |
 | `tests/dataloss-macos.sh` | 16 scenari che dipendono dal Mac: client NFS di macOS, scrittura su disco alla chiusura, blocchi dei file (InDesign), scambio di file, maiuscole, accenti, crash (macOS, nella CI) |
-| `tests/app-smoke-linux.sh` | test dell'app: configurazione, aggiornamento, disinstallazione |
+| `tests/app-smoke-linux.sh` | test dell'app per Mac su Linux (launchd finto): configurazione, aggiornamento, disinstallazione |
+| `tests/app-linux.sh` | l'app per Linux con systemd vero, FUSE e Samba: configurazione, riavvio, crash, offline, vassoio, aggiornamento, disinstallazione (nella CI) |
+| `tests/nautilus-ext.py` | estensione del file manager: pallini, cambi di stato, menu (nella CI) |
 | `tests/finder-macos.sh` | estensione del Finder: firma con sandbox, registrazione, avvio (macOS, nella CI) |
 | `tests/refresh-macos.sh` | tempi con cui le novità dal server arrivano al Finder (macOS, nella CI) |
 | `tests/speed-macos.sh` | velocità di lettura e scrittura dei file già sul Mac (macOS) |
@@ -216,6 +235,14 @@ TEST_LINUX=1 bash scripts/build-rclone.sh
 bash tests/e2e-linux.sh build/rclone-mimus-linux
 bash tests/dataloss-linux.sh build/rclone-mimus-linux
 bash tests/app-smoke-linux.sh build/rclone-mimus-linux
+```
+
+Pacchetti per Linux:
+
+```bash
+LINUX=1 NO_DARWIN=1 bash scripts/build-rclone.sh
+APPIMAGETOOL=/percorso/appimagetool bash scripts/build-linux.sh   # -> build/linux/
+nix build .#mimus                                                  # con Nix
 ```
 
 **Firma Apple:** con un account Apple Developer (99 $/anno) l'app può essere firmata e notarizzata (`codesign` + `notarytool` su Mac, oppure `rcodesign` da Linux) e si apre senza il passaggio "Apri comunque".

@@ -26,11 +26,15 @@ const (
 type paths struct {
 	exe, macos, bundle, rclone string
 	home, appSupport, cache    string
+	data                       string // Linux: ~/.local/share/mimus
 	plist, mount, logFile      string
 	settings                   string
 }
 
 func getPaths() paths {
+	if onLinux {
+		return linuxPaths()
+	}
 	exe, _ := os.Executable()
 	exe, _ = filepath.EvalSymlinks(exe)
 	macos := filepath.Dir(exe)
@@ -95,6 +99,9 @@ func (s *settings) defaults(p paths) {
 	}
 	if s.CacheDir == "" {
 		s.CacheDir = filepath.Join(p.appSupport, "cache")
+		if onLinux {
+			s.CacheDir = filepath.Join(p.data, "cache")
+		}
 	}
 }
 
@@ -227,6 +234,9 @@ func xmlEscape(s string) string {
 
 // writePlist writes the agent definition; returns true if it changed
 func writePlist(p paths, s settings) (bool, error) {
+	if onLinux {
+		return writeUnit(p, s)
+	}
 	data := renderPlist(p, s)
 	if old, err := os.ReadFile(p.plist); err == nil && bytes.Equal(old, data) {
 		return false, nil
@@ -248,17 +258,26 @@ func run(name string, args ...string) (string, error) {
 }
 
 func agentRunning() bool {
+	if onLinux {
+		return linuxRunning()
+	}
 	out, err := run("launchctl", "print", "gui/"+uid()+"/"+agentLabel)
 	return err == nil && strings.Contains(out, "state = running")
 }
 
 func agentLoaded() bool {
+	if onLinux {
+		return fileExists(linuxPaths().plist)
+	}
 	_, err := run("launchctl", "print", "gui/"+uid()+"/"+agentLabel)
 	return err == nil
 }
 
 // startAgent (re)loads the agent definition and starts it
 func startAgent(p paths) error {
+	if onLinux {
+		return linuxStart(p)
+	}
 	_, _ = run("launchctl", "bootout", "gui/"+uid()+"/"+agentLabel)
 	time.Sleep(2 * time.Second)
 	out, err := run("launchctl", "bootstrap", "gui/"+uid(), p.plist)
@@ -269,6 +288,9 @@ func startAgent(p paths) error {
 }
 
 func restartAgent(p paths) error {
+	if onLinux {
+		return linuxStart(p)
+	}
 	if !agentLoaded() {
 		return startAgent(p)
 	}
@@ -279,6 +301,10 @@ func restartAgent(p paths) error {
 }
 
 func stopAgent(p paths) {
+	if onLinux {
+		linuxStop(p)
+		return
+	}
 	_, _ = run("launchctl", "bootout", "gui/"+uid()+"/"+agentLabel)
 	time.Sleep(2 * time.Second)
 	if isMounted(p) {
@@ -291,6 +317,9 @@ func stopAgent(p paths) {
 func isMounted(p paths) bool { return isMountedAt(p.mount) }
 
 func isMountedAt(path string) bool {
+	if onLinux {
+		return linuxMounted(path)
+	}
 	out, _ := run("mount")
 	return strings.Contains(out, " on "+path+" (")
 }

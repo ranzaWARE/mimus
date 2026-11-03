@@ -36,6 +36,8 @@ func TestReleaseNotes(t *testing.T) {
 
 // download + checksum from a fake release server
 func TestLatestReleaseAndDownload(t *testing.T) {
+	defer func(v bool) { onLinux = v }(onLinux)
+	onLinux = false // the Mac's DMG
 	payload := []byte("finto dmg")
 	sum := sha256.Sum256(payload)
 	var srv *httptest.Server

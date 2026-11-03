@@ -22,6 +22,9 @@ func dsStoreBlocked() bool {
 // setDSStore: write = le viste del Finder (.DS_Store) vanno sul server
 // (comportamento normale di macOS)
 func setDSStore(p paths, s *settings, write bool) {
+	if onLinux {
+		return
+	}
 	if write {
 		if s.DSSetByMimus {
 			_, _ = run("defaults", "delete", dsDomain, dsKey)
@@ -41,6 +44,9 @@ func setDSStore(p paths, s *settings, write bool) {
 
 // restoreDSStore: disinstallazione
 func restoreDSStore(p paths) {
+	if onLinux {
+		return
+	}
 	if s, ok := loadSettings(p); ok && s.DSSetByMimus {
 		_, _ = run("defaults", "delete", dsDomain, dsKey)
 	}

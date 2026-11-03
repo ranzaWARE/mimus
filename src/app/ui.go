@@ -36,8 +36,11 @@ func testUI(args ...string) (string, bool) {
 // "" if closed with Esc / cancel
 func dialog(message, def string, buttons ...string) string {
 	if os.Getenv("MIMUS_UI") != "" {
-		out, _ := testUI(append([]string{"dialog", message, def}, buttons...)...)
+		out, _ := testUI(append([]string{"dialog", forLinux(message), def}, buttons...)...)
 		return out
+	}
+	if onLinux {
+		return lxDialog(message, def, buttons...)
 	}
 	const script = `on run argv
 	activate
@@ -66,8 +69,11 @@ func input(message, def string, hidden bool) (string, bool) {
 		mode = "hidden"
 	}
 	if os.Getenv("MIMUS_UI") != "" {
-		out, ok := testUI("input", message, def, mode)
+		out, ok := testUI("input", forLinux(message), def, mode)
 		return out, ok && out != "\x00cancel"
+	}
+	if onLinux {
+		return lxInput(message, def, hidden)
 	}
 	const script = `on run argv
 	activate
@@ -105,8 +111,11 @@ func askText(message, def string, hidden bool) (string, bool) {
 // choose shows a list; returns the chosen item or "" if cancelled
 func choose(prompt string, items []string, okLabel, cancelLabel string) string {
 	if os.Getenv("MIMUS_UI") != "" {
-		out, _ := testUI(append([]string{"choose", prompt}, items...)...)
+		out, _ := testUI(append([]string{"choose", forLinux(prompt)}, items...)...)
 		return out
+	}
+	if onLinux {
+		return lxChoose(prompt, items, okLabel, cancelLabel)
 	}
 	const script = `on run argv
 	activate
@@ -125,8 +134,11 @@ end run`
 // chooseFolder asks for a folder; returns its path or "" if cancelled
 func chooseFolder(prompt, def string) string {
 	if os.Getenv("MIMUS_UI") != "" {
-		out, _ := testUI("folder", prompt, def)
+		out, _ := testUI("folder", forLinux(prompt), def)
 		return out
+	}
+	if onLinux {
+		return lxFolder(prompt, def)
 	}
 	const script = `on run argv
 	activate

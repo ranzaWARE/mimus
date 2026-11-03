@@ -148,11 +148,25 @@ func availableUpdate(timeout time.Duration) (release, bool) {
 	if err != nil || !newerVersion(r.version(), appVersion) {
 		return release{}, false
 	}
-	if _, ok := r.asset(".dmg"); !ok {
+	if _, ok := r.asset(updateSuffix(getPaths())); !ok {
 		return release{}, false
 	}
 	return r, true
 }
+
+// updateSuffix: the release file that updates this installation
+func updateSuffix(p paths) string {
+	if onLinux {
+		if s := linuxAsset(p); s != "" {
+			return s
+		}
+		return "\x00none" // Nix, tar: updated in another way
+	}
+	return ".dmg"
+}
+
+// canSelfUpdate: MIMUS can install its updates (not with Nix or a tar)
+func canSelfUpdate(p paths) bool { return !onLinux || linuxAsset(p) != "" }
 
 // releaseNotes returns the first lines of the release text
 func releaseNotes(r release) string {
@@ -182,7 +196,11 @@ func offerUpdate(p paths, r release) bool {
 		return false
 	}
 	if err := installUpdate(p, r); err != nil {
-		info("Aggiornamento non riuscito: " + err.Error() + "\n\nPuoi scaricare la nuova versione da GitHub e trascinarla in Applicazioni.")
+		hint := "Puoi scaricare la nuova versione da GitHub e trascinarla in Applicazioni."
+		if onLinux {
+			hint = "Puoi scaricare la nuova versione da https://github.com/ranzaWARE/mimus/releases"
+		}
+		info("Aggiornamento non riuscito: " + err.Error() + "\n\n" + hint)
 		return false
 	}
 	return true
@@ -204,6 +222,9 @@ func checkForUpdates(p paths) bool {
 
 // installUpdate downloads, verifies and installs the release over this app
 func installUpdate(p paths, r release) error {
+	if onLinux {
+		return linuxInstallUpdate(p, r)
+	}
 	dmgAsset, ok := r.asset(".dmg")
 	if !ok {
 		return errors.New("la versione pubblicata non contiene il DMG")
@@ -377,6 +398,9 @@ func updaterPlist(p paths) string {
 
 // setUpdater installs or removes the daily check agent
 func setUpdater(p paths, on bool) {
+	if onLinux {
+		return // the tray icon checks every day
+	}
 	path := updaterPlist(p)
 	if !on {
 		_, _ = run("launchctl", "bootout", "gui/"+uid()+"/"+updaterLabel)

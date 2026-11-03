@@ -12,3 +12,6 @@ rclone.conf
 .env.*
 *.log
 __pycache__/
+
+# Python
+__pycache__/

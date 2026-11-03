@@ -3,6 +3,26 @@
 Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
 `rclone-mimus version` (es. `v1.72.0-mimus-1.0.0`).
 
+## 1.9.0 — 2026-11-03
+
+- **MIMUS per Linux**, con lo stesso motore e le stesse prove del Mac:
+  - pacchetti `.deb` (Debian, Ubuntu, Mint), AppImage (tutte le altre
+    distribuzioni) e Nix (flake con modulo NixOS: `programs.mimus.enable`),
+    per amd64 e arm64;
+  - la cartella si collega con FUSE da un servizio systemd dell'utente, che
+    riparte da solo; il servizio usa una copia del motore, rifatta quando il
+    programma si aggiorna;
+  - il dinosauro nel vassoio (StatusNotifierItem: KDE, Cinnamon, XFCE, MATE,
+    GNOME con l'estensione AppIndicator), con stato, avanzamento dei file e
+    controllo giornaliero degli aggiornamenti;
+  - pallini e menu del tasto destro in Nautilus, Nemo e Caja;
+  - finestre con zenity o kdialog, testi senza «Mac» e «Finder»; le copie di
+    conflitto si chiamano «conflitto PC»;
+  - aggiornamento automatico per `.deb` (chiede la password di
+    amministratore) e AppImage; guida per Linux.
+- Modulo offline: opzione `device` per il nome del computer nelle copie di
+  conflitto (predefinito «Mac»).
+
 ## 1.8.1 — 2026-11-03
 
 - **InDesign, Office e gli altri programmi che bloccano il documento aperto**

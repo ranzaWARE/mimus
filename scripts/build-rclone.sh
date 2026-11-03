@@ -6,6 +6,8 @@
 #   bash scripts/build-rclone.sh v1.7x.y    -> altra versione: poi rifare i test!
 # Output: build/rclone-mimus-darwin-arm64 e -amd64
 #         (+ build/rclone-mimus-linux con TEST_LINUX=1, per i test)
+#         (+ build/rclone-mimus-linux-amd64 e -arm64 con LINUX=1, per i pacchetti;
+#          NO_DARWIN=1 salta quelli per Mac)
 
 set -e
 RCLONE_VER="${1:-v1.72.0}"
@@ -47,10 +49,18 @@ go test -count=1 -run 'TestMimus' ./cmd/serve/nfs/
 LDFLAGS="-s -w -X github.com/rclone/rclone/fs.Version=$RCLONE_VER-mimus-$APP_VER"
 mkdir -p "$ROOT/build"
 for ARCH in arm64 amd64; do
+    [ "${NO_DARWIN:-0}" = 1 ] && break
     echo "Compilo darwin/$ARCH..."
     CGO_ENABLED=0 GOOS=darwin GOARCH=$ARCH go build -trimpath -ldflags "$LDFLAGS" \
         -o "$ROOT/build/rclone-mimus-darwin-$ARCH" .
 done
+if [ "${LINUX:-0}" = 1 ]; then
+    for ARCH in amd64 arm64; do
+        echo "Compilo linux/$ARCH..."
+        CGO_ENABLED=0 GOOS=linux GOARCH=$ARCH go build -trimpath -ldflags "$LDFLAGS" \
+            -o "$ROOT/build/rclone-mimus-linux-$ARCH" .
+    done
+fi
 if [ "${TEST_LINUX:-0}" = 1 ]; then
     CGO_ENABLED=0 go build -ldflags "$LDFLAGS" -o "$ROOT/build/rclone-mimus-linux" .
 fi

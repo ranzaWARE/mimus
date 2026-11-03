@@ -51,7 +51,7 @@ func menuHelper(p paths) string {
 	return filepath.Join(p.bundle, "Contents", "Library", "LoginItems", "MIMUS Menu.app", "Contents", "MacOS", "MIMUSMenu")
 }
 
-func hasMenuHelper(p paths) bool { return fileExists(menuHelper(p)) }
+func hasMenuHelper(p paths) bool { return onLinux || fileExists(menuHelper(p)) }
 
 func menuPlist(p paths) string {
 	return filepath.Join(filepath.Dir(p.plist), menuLabel+".plist")
@@ -66,6 +66,10 @@ func menuLoaded() bool {
 // app opens: it brings the icon back if it was hidden, and reloads it after
 // an update (the plist carries the version).
 func setMenuIcon(p paths, on bool) {
+	if onLinux {
+		linuxSetTray(p, on)
+		return
+	}
 	path := menuPlist(p)
 	if !on || !hasMenuHelper(p) {
 		if menuLoaded() {

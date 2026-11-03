@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Genera packaging/Guida.html (guida utente con illustrazioni, file unico).
-Uso: python3 packaging/make-guide.py [versione]"""
-import base64, html, os, sys
+Uso: python3 packaging/make-guide.py [versione]
+     python3 packaging/make-guide.py <versione> --linux   -> packaging/Guida-linux.html"""
+import base64, html, os, re, sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-VERSION = sys.argv[1] if len(sys.argv) > 1 else open(os.path.join(ROOT, "VERSION")).read().strip()
+ARGS = [a for a in sys.argv[1:] if not a.startswith("--")]
+LINUX = "--linux" in sys.argv
+VERSION = ARGS[0] if ARGS else open(os.path.join(ROOT, "VERSION")).read().strip()
 ICON = "data:image/png;base64," + base64.b64encode(open(os.path.join(HERE, "AppIcon.png"), "rb").read()).decode()
 
 E = html.escape
@@ -248,6 +251,8 @@ FIG = {
 }
 
 def fig(key, caption):
+    if LINUX:  # le illustrazioni sono finestre del Mac
+        return ""
     return f'<figure>{FIG[key]}<figcaption>{caption}</figcaption></figure>'
 
 page = f"""<!doctype html>
@@ -585,6 +590,78 @@ td.icon {{ width: 64px; text-align: center; vertical-align: middle; }}
 </body>
 </html>
 """
+LINUX_SECTIONS = {
+"installa": f"""<section id="installa">
+  <h2>Installazione</h2>
+  <p>Scegli il pacchetto adatto al tuo computer dalla pagina del progetto (<code>github.com/ranzaWARE/mimus/releases</code>):</p>
+  <table>
+    <tr><th>Sistema</th><th>Come</th></tr>
+    <tr><td>Debian, Ubuntu, Mint</td><td>scarica <code>mimus_{E(VERSION)}_amd64.deb</code> e installalo con un doppio clic oppure da terminale: <code>sudo apt install ./mimus_{E(VERSION)}_amd64.deb</code></td></tr>
+    <tr><td>NixOS</td><td>aggiungi il flake <code>github:ranzaWARE/mimus</code> e attiva <code>programs.mimus.enable = true;</code> (vedi <a href="#it">Per l’ufficio IT</a>)</td></tr>
+    <tr><td>Tutte le altre</td><td>scarica <code>MIMUS-{E(VERSION)}-x86_64.AppImage</code>, rendilo eseguibile (tasto destro → Proprietà → Permetti l’esecuzione, oppure <code>chmod +x</code>) e aprilo</td></tr>
+  </table>
+  <p>Poi apri <strong>MIMUS</strong> dal menu delle applicazioni. Servono FUSE (<code>fuse3</code>) e, per le finestre, <code>zenity</code> (o <code>kdialog</code> su KDE): sui desktop più diffusi ci sono già.</p>
+</section>""",
+"barra_note": """<div class="note">Non la vedi? Su GNOME le icone nella barra in alto richiedono l’estensione <strong>AppIndicator</strong> (<code>sudo apt install gnome-shell-extension-appindicator</code>, poi esci e rientra nella sessione e attivala in <em>Estensioni</em>); su Ubuntu, KDE, Cinnamon, XFCE e MATE c’è già.</div>""",
+"aggiorna": """<section id="aggiorna">
+  <h2>Aggiornare e disinstallare</h2>
+  <h3>Nuova versione</h3>
+  <p>Con il pacchetto <code>.deb</code> o l’AppImage, MIMUS controlla una volta al giorno se c’è una versione nuova: l’icona in alto mostra <em>Aggiorna MIMUS alla …</em>. Scegliendola ti mostra le novità; premi <strong>Aggiorna</strong> e fa tutto lei: scarica, verifica che il file sia integro e lo installa (per il <code>.deb</code> chiede la password di amministratore). Configurazione, file sul computer e modifiche in attesa restano.</p>
+  <p>Con NixOS MIMUS si aggiorna con il sistema (<code>nix flake update</code> e <code>nixos-rebuild switch</code>). In ogni caso, al primo avvio della versione nuova il collegamento riparte da solo con il programma aggiornato.</p>
+  <h3>Disinstallare</h3>
+  <p>App → <em>Disinstalla</em>: ferma il collegamento e toglie servizio, icona e pallini. Alla fine togli il programma: <code>sudo apt remove mimus</code>, oppure cancella il file AppImage, oppure toglilo dalla configurazione di NixOS.</p>
+  <div class="warn">Se ci sono modifiche non ancora caricate sul server remoto, l’app lo dice: la cosa giusta è collegarsi al server, aspettare che finiscano e riprovare. Se vuoi disinstallare lo stesso, devi scrivere <strong>OK</strong>: accetti di <strong>perdere quelle modifiche</strong> e MIMUS cancella dal computer tutti i suoi file (copie dei file remoti, coda, impostazioni, password salvata). Sul server non viene cancellato niente.</div>
+</section>""",
+"it": """<section id="it">
+  <h2>Per l’ufficio IT</h2>
+  <table>
+    <tr><th>Cosa</th><th>Dove</th></tr>
+    <tr><td>Programma</td><td><code>/usr/lib/mimus/</code> (.deb), dentro l’AppImage, o nel pacchetto Nix; il servizio usa una copia del motore in <code>~/.local/share/mimus/bin/</code>, rifatta quando il programma cambia</td></tr>
+    <tr><td>Servizio (avvio automatico)</td><td><code>~/.config/systemd/user/mimus.service</code> (scritto dall’app): <code>rclone-mimus mount</code> con FUSE; <code>systemctl --user status mimus</code></td></tr>
+    <tr><td>Icona nel vassoio</td><td><code>mimus tray</code>, avviata da <code>~/.config/autostart/mimus-tray.desktop</code> (StatusNotifierItem); controlla anche gli aggiornamenti una volta al giorno</td></tr>
+    <tr><td>Pallini e menu nel file manager</td><td><code>~/.local/share/nautilus-python/extensions/mimus.py</code> (anche <code>nemo-python</code>, <code>caja-python</code>); servono <code>python3-nautilus</code> (o l’equivalente) e il riavvio del file manager (<code>nautilus -q</code>)</td></tr>
+    <tr><td>Finestre</td><td><code>zenity</code> o <code>kdialog</code>; quelle del servizio (conflitti, password) passano da <code>~/.local/share/mimus/bin/mimus</code></td></tr>
+    <tr><td>NixOS</td><td><code>inputs.mimus.url = "github:ranzaWARE/mimus";</code> → <code>imports = [ inputs.mimus.nixosModules.default ];</code> e <code>programs.mimus.enable = true;</code> (opzioni <code>fileManager</code>, <code>gnomeTray</code>)</td></tr>
+    <tr><td>File e cartelle da tenere sempre sul computer</td><td><code>…/cache/offline/mimus/*/pinned.json</code></td></tr>
+    <tr><td>Impostazioni (<code>settings.json</code>)</td><td><code>~/.config/mimus/</code></td></tr>
+    <tr><td>Cache e coda offline</td><td><code>~/.local/share/mimus/cache</code> o la posizione scelta nelle Impostazioni</td></tr>
+    <tr><td>Modifiche offline rifiutate dal server remoto</td><td><code>…/cache/offline/mimus/*/journal-failed.json</code></td></tr>
+    <tr><td>Credenziali (password offuscata)</td><td><code>~/.config/rclone/rclone.conf</code>, sezioni <code>[remoto]</code> e <code>[mimus]</code></td></tr>
+    <tr><td>Log (5 × 10 MB a rotazione)</td><td><code>~/.local/state/mimus/mimus.log</code></td></tr>
+  </table>
+  <p>Il server remoto è considerato raggiungibile se risponde sulla porta 445.</p>
+</section>""",
+}
+MAC_ONLY_FAQ = ["macOS dice che", "macOS chiede di consentire", "tag colorato", "«.DS_Store»"]
+LINUX_WORDS = [
+    ("su questo Mac", "su questo computer"), ("da questo Mac", "da questo computer"), ("questo Mac", "questo computer"),
+    ("sul Mac", "sul computer"), ("dal Mac", "dal computer"), ("del Mac", "del computer"), ("al Mac", "al computer"),
+    ("Il Mac", "Il computer"), ("il Mac", "il computer"), ("nel Finder", "nel file manager"), ("del Finder", "del file manager"),
+    ("Finder", "file manager"), ("barra dei menu", "barra in alto"), ("da Applicazioni", "dal menu delle applicazioni"),
+    ("conflitto Mac", "conflitto PC"), ("Mac", "computer"),
+]
+
+
+def linuxize(page):
+    for key in ("installa", "aggiorna", "it"):
+        page = re.sub(r'<section id="%s">.*?</section>' % key, lambda m: LINUX_SECTIONS[key], page, flags=re.S)
+    page = re.sub(r'<div class="note">Non la vedi\?.*?</div>', lambda m: LINUX_SECTIONS["barra_note"], page, flags=re.S)
+    for t in MAC_ONLY_FAQ:
+        page = re.sub(r'\s*<details><summary>[^<]*' + re.escape(t) + r'.*?</details>', "", page, flags=re.S)
+    # testo, non i tag né gli stili
+    parts = re.split(r'(<[^>]*>|<style>.*?</style>)', page, flags=re.S)
+    for i, part in enumerate(parts):
+        if part.startswith("<"):
+            continue
+        for a, b in LINUX_WORDS:
+            part = part.replace(a, b)
+        parts[i] = part
+    return "".join(parts).replace("<title>Guida MIMUS</title>", "<title>Guida MIMUS per Linux</title>")
+
+
 out = os.path.join(HERE, "Guida.html")
+if LINUX:
+    page = linuxize(page)
+    out = os.path.join(HERE, "Guida-linux.html")
 open(out, "w", encoding="utf-8").write(page)
 print(out)
