@@ -243,7 +243,7 @@ index 0ffa30c..ef45520 100644
  
  	c.mu.Lock()
 diff --git a/vfs/vfscache/item.go b/vfs/vfscache/item.go
-index 66adc9b..d29112d 100644
+index 66adc9b..c594f8c 100644
 --- a/vfs/vfscache/item.go
 +++ b/vfs/vfscache/item.go
 @@ -7,10 +7,13 @@ import (
@@ -492,7 +492,21 @@ index 66adc9b..d29112d 100644
  		unlockMutexForCall(&item.mu, func() {
  			o, err = operations.Copy(ctx, item.c.fremote, o, name, cacheObj)
  		})
-@@ -1253,6 +1419,9 @@ func (item *Item) ReadAt(b []byte, off int64) (n int, err error) {
+@@ -672,7 +838,12 @@ func (item *Item) Close(storeFn StoreFn) (err error) {
+ 	// FIXME It would be nice to do this asynchronously however it
+ 	// would require keeping the downloaders alive after the item
+ 	// has been closed
+-	if item.info.Dirty && item.o != nil {
++	//
++	// MIMUS: not after a failed write (disk full...): the copy is set aside,
++	// never uploaded, and the parts the failed writes left out must not be
++	// asked to the server (an error there would stop the close before the
++	// upload queue, and the copy would stay in the cache forever)
++	if item.info.Dirty && item.o != nil && !item.info.MimusWriteFailed {
+ 		err = item._ensure(0, item.info.Size)
+ 		if err != nil {
+ 			return fmt.Errorf("vfs cache: failed to download missing parts of cache file: %w", err)
+@@ -1253,6 +1424,9 @@ func (item *Item) ReadAt(b []byte, off int64) (n int, err error) {
  		if err == nil || err == io.EOF {
  			break
  		}
@@ -502,7 +516,7 @@ index 66adc9b..d29112d 100644
  		fs.Errorf(item.name, "vfs cache: failed to _ensure cache %v", err)
  		if !fserrors.IsErrNoSpace(err) && err.Error() != "no space left on device" {
  			fs.Debugf(item.name, "vfs cache: failed to _ensure cache %v is not out of space", err)
-@@ -1323,6 +1492,12 @@ func (item *Item) WriteAt(b []byte, off int64) (n int, err error) {
+@@ -1323,6 +1497,12 @@ func (item *Item) WriteAt(b []byte, off int64) (n int, err error) {
  	if n > 0 {
  		item._dirty()
  	}
@@ -515,7 +529,7 @@ index 66adc9b..d29112d 100644
  	end := off + int64(n)
  	// Writing off the end of the file so need to make some
  	// zeroes.  we do this by showing that we have written to the
-@@ -1409,7 +1584,7 @@ func (item *Item) Sync() (err error) {
+@@ -1409,7 +1589,7 @@ func (item *Item) Sync() (err error) {
  	if err != nil {
  		return fmt.Errorf("vfs cache item sync: failed to sync file: %w", err)
  	}

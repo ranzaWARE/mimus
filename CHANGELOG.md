@@ -13,6 +13,10 @@ Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
   le impostazioni nuove (prima veniva ripresa così com'era).
 - Un file letto solo in parte da un programma che poi si ferma non resta
   più «in scaricamento» nel menu e nel Finder.
+- Disco del Mac pieno: il file rimasto a metà viene messo da parte anche
+  quando le scritture fallite lasciano dei buchi nel file (succede con i
+  kernel recenti); prima restava nella cache senza essere né caricato né
+  messo da parte.
 
 ## 1.8.0 — 2026-11-03
 
