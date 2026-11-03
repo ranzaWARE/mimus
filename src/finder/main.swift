@@ -136,6 +136,32 @@ func badgeImage(fill: NSColor?, ring: NSColor?, glyph: String?) -> NSImage {
     }
 }
 
+// scaricamento in corso: anello blu che si riempie (frazione 0...1)
+func progressBadgeImage(_ fraction: Double) -> NSImage {
+    return NSImage(size: NSSize(width: 64, height: 64), flipped: false) { rect in
+        NSColor.white.setFill()
+        NSBezierPath(ovalIn: rect.insetBy(dx: 2, dy: 2)).fill()
+        let r = rect.insetBy(dx: 6, dy: 6)
+        NSColor.systemBlue.setStroke()
+        let ring = NSBezierPath(ovalIn: r.insetBy(dx: 3, dy: 3))
+        ring.lineWidth = 5
+        ring.stroke()
+        if fraction > 0 {
+            let c = NSPoint(x: rect.midX, y: rect.midY)
+            let pie = NSBezierPath()
+            pie.move(to: c)
+            pie.appendArc(withCenter: c, radius: r.width / 2 - 8, startAngle: 90,
+                          endAngle: 90 - 360 * CGFloat(min(fraction, 1)), clockwise: true)
+            pie.close()
+            NSColor.systemBlue.setFill()
+            pie.fill()
+        }
+        return true
+    }
+}
+
+let progressSteps = 8
+
 // ---------- estensione ----------
 
 @objc(FinderSync)
@@ -149,6 +175,7 @@ final class FinderSync: FIFinderSync {
     var dirPinned: [String: Bool] = [:]   // cartella -> dentro una cartella mantenuta
     var timer: DispatchSourceTimer?
     var ticks = 0
+    var loading = Set<String>()           // cartelle con file in scaricamento
     var servicePid = 0                    // processo del collegamento
     var serviceDown = false
 
@@ -159,6 +186,9 @@ final class FinderSync: FIFinderSync {
         c.setBadgeImage(badgeImage(fill: .systemGreen, ring: nil, glyph: nil), label: "Su questo Mac", forBadgeIdentifier: "local")
         c.setBadgeImage(badgeImage(fill: .systemGreen, ring: nil, glyph: "check"), label: "Sempre su questo Mac", forBadgeIdentifier: "pinned")
         c.setBadgeImage(badgeImage(fill: .systemOrange, ring: nil, glyph: "up"), label: "Da caricare sul server remoto", forBadgeIdentifier: "upload")
+        for i in 0..<progressSteps {
+            c.setBadgeImage(progressBadgeImage(Double(i) / Double(progressSteps)), label: "In scaricamento", forBadgeIdentifier: "dl\(i)")
+        }
         queue.sync { self.updateRoot() }
         let t = DispatchSource.makeTimerSource(queue: queue)
         t.schedule(deadline: .now() + 1, repeating: 0.5)
@@ -201,6 +231,7 @@ final class FinderSync: FIFinderSync {
         if ticks % 4 == 0 { checkService() }
         var dirs = pending
         pending.removeAll()
+        if ticks % 2 == 0 { dirs.formUnion(loading) } // avanzamento: ogni secondo
         if ticks % 6 == 0 { dirs.formUnion(observed) }
         for d in dirs { refresh(d) }
     }
@@ -243,6 +274,7 @@ final class FinderSync: FIFinderSync {
               let entries = out["entries"] as? [[String: Any]] else { return }
         dirPinned[dir] = (out["pinned"] as? Bool) ?? false
         var changes: [(URL, String)] = []
+        var anyLoading = false
         for e in entries {
             guard let name = e["name"] as? String else { continue }
             let state = (e["state"] as? String) ?? "remote"
@@ -253,6 +285,10 @@ final class FinderSync: FIFinderSync {
             case "folder": badge = pin ? "pinned" : ""
             case "upload": badge = "upload"
             case "local": badge = pin ? "pinned" : "local"
+            case "downloading":
+                let pct = (e["progress"] as? NSNumber)?.intValue ?? 0
+                badge = "dl\(min(progressSteps - 1, max(0, pct * progressSteps / 100)))"
+                anyLoading = true
             default: badge = "remote"
             }
             if name.hasPrefix(".") { badge = "" }
@@ -262,9 +298,14 @@ final class FinderSync: FIFinderSync {
                 changes.append((url(r), badge))
             }
         }
+        if anyLoading { loading.insert(dir) } else { loading.remove(dir) }
         if !changes.isEmpty {
-            let summary = changes.map { "\($0.0.lastPathComponent)=\($0.1.isEmpty ? "-" : $0.1)" }.joined(separator: " ")
-            dlog("«\(dir.isEmpty ? "/" : dir)» \(summary)")
+            // l'avanzamento cambia ogni secondo: nel registro solo il primo
+            let logged = changes.filter { !$0.1.hasPrefix("dl") || $0.1 == "dl0" }
+            if !logged.isEmpty {
+                let summary = logged.map { "\($0.0.lastPathComponent)=\($0.1.isEmpty ? "-" : $0.1)" }.joined(separator: " ")
+                dlog("«\(dir.isEmpty ? "/" : dir)» \(summary)")
+            }
             DispatchQueue.main.async {
                 let c = FIFinderSyncController.default()
                 for (u, b) in changes { c.setBadgeIdentifier(b, for: u) }

@@ -39,10 +39,10 @@ index 76aa03b..771c5c6 100644
  		// Update the node with the new details
 diff --git a/vfs/mimus.go b/vfs/mimus.go
 new file mode 100644
-index 0000000..9305891
+index 0000000..d4e04a6
 --- /dev/null
 +++ b/vfs/mimus.go
-@@ -0,0 +1,586 @@
+@@ -0,0 +1,713 @@
 +package vfs
 +
 +// MIMUS: what the Finder extension needs. For the files of a folder: on
@@ -57,7 +57,9 @@ index 0000000..9305891
 +	"io"
 +	"os"
 +	"path"
++	"sort"
 +	"strings"
++	"sync"
 +	"time"
 +
 +	"github.com/rclone/rclone/fs"
@@ -91,6 +93,7 @@ index 0000000..9305891
 +	MimusLocal   = "local"   // on this computer
 +	MimusUpload  = "upload"  // changed here, waiting to be uploaded
 +	MimusFolder  = "folder"
++	MimusLoading = "downloading" // being downloaded now (see progress)
 +)
 +
 +func init() {
@@ -103,6 +106,17 @@ index 0000000..9305891
 +Returns entries: [{name, state, pinned}] with state one of remote (only
 +on the server), partial, local (on this computer), upload (waiting to be
 +uploaded), folder; pinned = kept always on this computer.
++`,
++	})
++	rc.Add(rc.Call{
++		Path:  "vfs/mimus-transfers",
++		Fn:    rcMimusTransfers,
++		Title: "MIMUS: files being downloaded or uploaded now, with progress.",
++		Help: `Parameters: fs (optional).
++
++Returns transfers: [{name, up (false = download), size, done (bytes),
++speed (bytes per second)}]. For a download, done is what is already on this
++computer.
 +`,
 +	})
 +	rc.Add(rc.Call{
@@ -193,9 +207,10 @@ index 0000000..9305891
 +}
 +
 +type mimusEntry struct {
-+	Name   string `json:"name"`
-+	State  string `json:"state"`
-+	Pinned bool   `json:"pinned"`
++	Name     string `json:"name"`
++	State    string `json:"state"`
++	Pinned   bool   `json:"pinned"`
++	Progress int    `json:"progress,omitempty"` // downloading: percent done
 +}
 +
 +func rcMimusStates(ctx context.Context, in rc.Params) (rc.Params, error) {
@@ -218,12 +233,20 @@ index 0000000..9305891
 +		return nil, err
 +	}
 +	p := vfs.pinner()
++	moving := map[string]mimusTransfer{}
++	for _, t := range vfs.mimusTransfers(ctx) {
++		moving[t.Name] = t
++	}
 +	entries := make([]mimusEntry, 0, len(nodes))
 +	for _, n := range nodes {
 +		rel := path.Join(dir, n.Name())
 +		e := mimusEntry{Name: n.Name(), State: MimusFolder}
 +		if !n.IsDir() {
 +			e.State = vfs.mimusState(rel)
++			if t, ok := moving[rel]; ok && !t.Up && t.Size > 0 && e.State != MimusUpload && e.State != MimusLocal {
++				e.State = MimusLoading
++				e.Progress = int(t.Done * 100 / t.Size)
++			}
 +		}
 +		if p != nil {
 +			e.Pinned = p.IsPinned(rel)
@@ -628,6 +651,110 @@ index 0000000..9305891
 +func mimusReservedErr(d *Dir, name string) error {
 +	fs.Errorf(d, "MIMUS: il nome «%s» non è ammesso sul server remoto (nome riservato di Windows): scegline un altro", name)
 +	return EINVAL
++}
++
++// mimusTransfer: a file being downloaded to or uploaded from this computer
++type mimusTransfer struct {
++	Name  string  `json:"name"`
++	Up    bool    `json:"up"`
++	Size  int64   `json:"size"`
++	Done  int64   `json:"done"`
++	Speed float64 `json:"speed"` // bytes per second
++}
++
++// downloads seen recently: the Mac reads a file in many short requests,
++// each a transfer of its own, so a download is kept for a few seconds
++// between two of them
++var mimusSeen = struct {
++	sync.Mutex
++	last map[string]mimusTransfer
++	at   map[string]time.Time
++}{last: map[string]mimusTransfer{}, at: map[string]time.Time{}}
++
++func mimusInt(v any) int64 {
++	switch x := v.(type) {
++	case int64:
++		return x
++	case int:
++		return int64(x)
++	case float64:
++		return int64(x)
++	}
++	return 0
++}
++
++// mimusTransfers returns what is moving now, from the transfer statistics
++func (vfs *VFS) mimusTransfers(ctx context.Context) []mimusTransfer {
++	now := time.Now()
++	cur := map[string]mimusTransfer{}
++	if call := rc.Calls.Get("core/stats"); call != nil {
++		if out, err := call.Fn(ctx, rc.Params{}); err == nil {
++			list, _ := out["transferring"].([]rc.Params)
++			for _, t := range list {
++				name, _ := t["name"].(string)
++				if name == "" {
++					continue
++				}
++				e := cur[name]
++				e.Name = name
++				up := t["dstFs"] != nil
++				e.Up = e.Up || up
++				if size := mimusInt(t["size"]); size > e.Size {
++					e.Size = size
++				}
++				if sp, ok := t["speed"].(float64); ok {
++					e.Speed += sp
++				}
++				if up {
++					if b := mimusInt(t["bytes"]); b > e.Done {
++						e.Done = b
++					}
++				}
++				cur[name] = e
++			}
++		}
++	}
++	mimusSeen.Lock()
++	defer mimusSeen.Unlock()
++	for name, e := range cur {
++		mimusSeen.last[name] = e
++		mimusSeen.at[name] = now
++	}
++	res := []mimusTransfer{}
++	for name, e := range mimusSeen.last {
++		_, active := cur[name]
++		if (e.Up && !active) || now.Sub(mimusSeen.at[name]) > 5*time.Second {
++			delete(mimusSeen.last, name)
++			delete(mimusSeen.at, name)
++			continue
++		}
++		if !e.Up && vfs.cache != nil {
++			st := vfs.cache.State(name)
++			if st.Complete || st.Dirty {
++				delete(mimusSeen.last, name)
++				delete(mimusSeen.at, name)
++				continue
++			}
++			if st.Size > 0 {
++				e.Size = st.Size
++			}
++			e.Done = st.Present
++		}
++		if !active {
++			e.Speed = 0
++		}
++		res = append(res, e)
++	}
++	sort.Slice(res, func(i, j int) bool { return res[i].Name < res[j].Name })
++	return res
++}
++
++func rcMimusTransfers(ctx context.Context, in rc.Params) (rc.Params, error) {
++	vfs, err := getVFS(in)
++	if err != nil {
++		return nil, err
++	}
++	return rc.Params{"transfers": vfs.mimusTransfers(ctx)}, nil
 +}
 diff --git a/vfs/mimus_test.go b/vfs/mimus_test.go
 new file mode 100644
@@ -1110,10 +1237,10 @@ index 87783fb..ba6a023 100644
  	}
 diff --git a/vfs/vfscache/mimus.go b/vfs/vfscache/mimus.go
 new file mode 100644
-index 0000000..a7ea217
+index 0000000..8c86226
 --- /dev/null
 +++ b/vfs/vfscache/mimus.go
-@@ -0,0 +1,166 @@
+@@ -0,0 +1,168 @@
 +package vfscache
 +
 +// MIMUS: state of a file in the cache (for the Finder: on this Mac, only on
@@ -1136,6 +1263,7 @@ index 0000000..a7ea217
 +	Dirty       bool // changed here, not yet uploaded
 +	Open        bool // in use
 +	Size        int64
++	Present     int64  // bytes of the file already on this computer
 +	Fingerprint string // of the remote version the copy comes from
 +}
 +
@@ -1157,6 +1285,7 @@ index 0000000..a7ea217
 +	defer item.mu.Unlock()
 +	st.Known = true
 +	st.Size = item.info.Size
++	st.Present = item.info.Rs.Size()
 +	st.Fingerprint = item.info.Fingerprint
 +	st.Cached = item._exists()
 +	st.Complete = st.Cached && item._present()

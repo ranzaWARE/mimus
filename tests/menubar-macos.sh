@@ -26,6 +26,7 @@ class H(BaseHTTPRequestHandler):
         st = json.load(open(state))
         out = {"/mimus/status": st.get("status", {}), "/vfs/stats": st.get("vfs", {}),
                "/core/stats": st.get("core", {}), "/job/status": {"finished": True},
+               "/vfs/mimus-transfers": {"transfers": st.get("transfers", [])},
                "/vfs/refresh": {"jobid": 1}}.get(self.path)
         body = json.dumps(out if out is not None else {"error": "?"}).encode()
         self.send_response(200 if out is not None else 404)
@@ -77,6 +78,11 @@ state "{$IDLE, \"vfs\": {\"diskCache\": {\"uploadsInProgress\": 1, \"uploadsQueu
 expect "caricamento: corre" 10 '^stato: run \| sincronizzazione in corso \| 2 file da caricare'
 state "{$IDLE, $VFS0, \"core\": {\"transferring\": [{}]}}"
 expect "scaricamento: corre" 10 '^stato: run \| sincronizzazione in corso \| Scarico 1 file'
+state "{$IDLE, $VFS0, \"core\": {\"transferring\": [{}]}, \"transfers\": [{\"name\": \"Disegni/Tavola.dwg\", \"up\": false, \"size\": 2400000000, \"done\": 1200000000, \"speed\": 80000000}]}"
+expect "barra di avanzamento nel menu" 10 '^avanzamento: Disegni/Tavola.dwg 50% · .* · ancora 15 s'
+state "{$IDLE, $VFS0, \"core\": {}}"
+expect "finito: la riga sparisce" 10 '^avanzamento: $'
+
 state "{\"status\": {\"remotes\": 1, \"online\": false, \"journal\": 3, \"parked\": 0, \"problem\": \"\"}, $VFS0, \"core\": {}}"
 expect "offline con modifiche in coda: dorme" 10 '^stato: sleep \| offline \| .*3 modifiche fatte offline'
 state "{\"status\": {\"remotes\": 1, \"online\": false, \"authFailed\": true, \"journal\": 0, \"parked\": 0, \"problem\": \"Il server remoto non accetta la password\"}, $VFS0, \"core\": {}}"

@@ -128,6 +128,9 @@ def badge_svg(kind, x=0, y=0, size=22):
     g = f'<g transform="translate({x},{y}) scale({k})"><circle cx="32" cy="32" r="30" fill="#fff"/>'
     if kind == "remote":
         g += '<circle cx="32" cy="32" r="21.5" fill="none" stroke="#8e8e93" stroke-width="9"/>'
+    elif kind == "loading":  # in scaricamento: anello blu che si riempie (qui a metà)
+        g += ('<circle cx="32" cy="32" r="23" fill="none" stroke="#007aff" stroke-width="5"/>'
+              '<path d="M32 32 L32 14 A18 18 0 0 1 32 50 Z" fill="#007aff"/>')
     else:
         g += f'<circle cx="32" cy="32" r="26" fill="{"#ff9500" if kind == "upload" else "#34c759"}"/>'
     if kind == "pinned":
@@ -400,7 +403,7 @@ td.icon {{ width: 64px; text-align: center; vertical-align: middle; }}
   <table>
     <tr><th class="icon">Icona</th><th>Cosa vuol dire</th></tr>
     <tr><td class="icon">{mb_icon(["sleep-0", "sleep-1", "sleep-2", "sleep-2"], 3.2, "dorme")}</td><td><strong>Dorme (Z Z Z):</strong> tutto sincronizzato, non c’è niente da fare. Dorme anche quando sei <strong>offline</strong>: lavori sui file già sul Mac e le modifiche partono da sole al ritorno in rete.</td></tr>
-    <tr><td class="icon">{mb_icon(["run-0", "run-1", "run-2", "run-3"], 0.52, "corre")}</td><td><strong>Corre:</strong> sta sincronizzando: carica o scarica file, applica le modifiche fatte offline o aggiorna l’elenco delle cartelle. Puoi continuare a lavorare.</td></tr>
+    <tr><td class="icon">{mb_icon(["run-0", "run-1", "run-2", "run-3"], 0.52, "corre")}</td><td><strong>Corre:</strong> sta sincronizzando: carica o scarica file, applica le modifiche fatte offline o aggiorna l’elenco delle cartelle. Puoi continuare a lavorare. Aprendo il menu vedi una barra di avanzamento per ogni file che si sta scaricando o caricando.</td></tr>
     <tr><td class="icon">{mb_icon(["alert"], 1, "punto esclamativo")}</td><td><strong>Punto esclamativo:</strong> c’è un problema da guardare: password non accettata, modifiche rifiutate dal server remoto, disco quasi pieno, collegamento fermo. Clicca l’icona per leggere cosa succede.</td></tr>
   </table>
   {fig("menubar", "Cliccando l’icona: lo stato in parole e i comandi più usati.")}
@@ -414,6 +417,7 @@ td.icon {{ width: 64px; text-align: center; vertical-align: middle; }}
   <table>
     <tr><th class="icon">Pallino</th><th>Cosa vuol dire</th></tr>
     <tr><td class="icon">{badge_inline("remote", "cerchio grigio")}</td><td><strong>Solo sul server remoto.</strong> Si scarica da solo quando lo apri (serve la rete).</td></tr>
+    <tr><td class="icon">{badge_inline("loading", "anello blu che si riempie")}</td><td><strong>In scaricamento.</strong> L’anello si riempie man mano. Nel menu del dinosauro, in alto, ogni file ha la sua barra con percentuale, velocità e tempo che manca.</td></tr>
     <tr><td class="icon">{badge_inline("local", "pallino verde")}</td><td><strong>Su questo Mac.</strong> Si apre anche offline. Se non lo usi per un po’ (30 giorni, modificabile) viene tolto dal Mac, ma solo se è al sicuro sul server.</td></tr>
     <tr><td class="icon">{badge_inline("pinned", "pallino verde con spunta")}</td><td><strong>Sempre su questo Mac.</strong> Non viene mai tolto; se è una cartella, anche i file nuovi messi dai colleghi vengono scaricati da soli.</td></tr>
     <tr><td class="icon">{badge_inline("upload", "pallino arancione con freccia")}</td><td><strong>Da caricare sul server remoto.</strong> L’hai modificato qui; parte da solo appena il server è raggiungibile.</td></tr>

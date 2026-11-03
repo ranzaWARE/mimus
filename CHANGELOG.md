@@ -3,6 +3,17 @@
 Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
 `rclone-mimus version` (es. `v1.72.0-mimus-1.0.0`).
 
+## 1.8.0 — 2026-11-03
+
+- **Avanzamento di scaricamenti e caricamenti**:
+  - nel menu del dinosauro, in alto, una barra per ogni file che si sta
+    scaricando (↓) o caricando (↑), con percentuale, quanto manca, velocità
+    e tempo stimato; si aggiorna ogni secondo anche a menu aperto;
+  - nel Finder il file in scaricamento ha un anello blu che si riempie man
+    mano, poi diventa verde.
+- Nuova chiamata del servizio `vfs/mimus-transfers` (per l'icona e per le
+  prove).
+
 ## 1.7.3 — 2026-10-16
 
 - **La cartella resta collegata quando il servizio riparte** («Riavvia

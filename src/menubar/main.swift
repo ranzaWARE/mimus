@@ -61,6 +61,7 @@ final class Snapshot: NSObject {
     var core: [String: Any] = [:]
     var refreshing = false
     var mounts = Set<String>()
+    var transfers: [[String: Any]] = []
 }
 
 final class Box: @unchecked Sendable {
@@ -120,6 +121,7 @@ final class Poller: NSObject {
         s.status = st
         s.vfs = call("vfs/stats") ?? [:]
         s.core = call("core/stats") ?? [:]
+        s.transfers = (call("vfs/mimus-transfers")?["transfers"] as? [[String: Any]]) ?? []
         lock.lock()
         let job = refreshJob
         lock.unlock()
@@ -139,12 +141,73 @@ final class Poller: NSObject {
 
     @objc func loop() {
         while true {
+            var moving = false
             autoreleasepool {
                 let s = snapshot()
+                moving = !s.transfers.isEmpty
                 receiver?.performSelector(onMainThread: #selector(MenuController.apply(_:)), with: s, waitUntilDone: false)
             }
-            Thread.sleep(forTimeInterval: pollSeconds)
+            // con file in movimento la barra si aggiorna ogni secondo
+            Thread.sleep(forTimeInterval: moving ? 1 : pollSeconds)
         }
+    }
+}
+
+// ---------- avanzamento di un file (riga del menu) ----------
+
+func bytesText(_ n: Int64) -> String {
+    return ByteCountFormatter.string(fromByteCount: n, countStyle: .file)
+}
+
+func etaText(_ seconds: Double) -> String {
+    if seconds < 60 { return "ancora \(max(1, Int(seconds.rounded()))) s" }
+    if seconds < 3600 { return "ancora \(Int((seconds / 60).rounded())) min" }
+    return String(format: "ancora %.1f h", seconds / 3600)
+}
+
+final class TransferRow: NSView {
+    let name = NSTextField(labelWithString: "")
+    let bar = NSProgressIndicator()
+    let info = NSTextField(labelWithString: "")
+
+    init() {
+        super.init(frame: NSRect(x: 0, y: 0, width: 320, height: 50))
+        name.font = NSFont.menuFont(ofSize: 13)
+        name.lineBreakMode = .byTruncatingMiddle
+        name.frame = NSRect(x: 18, y: 29, width: 290, height: 17)
+        bar.style = .bar
+        bar.isIndeterminate = false
+        bar.minValue = 0
+        bar.maxValue = 1
+        bar.controlSize = .small
+        bar.frame = NSRect(x: 18, y: 17, width: 290, height: 10)
+        info.font = NSFont.systemFont(ofSize: 11)
+        info.textColor = .secondaryLabelColor
+        info.lineBreakMode = .byTruncatingTail
+        info.frame = NSRect(x: 18, y: 2, width: 290, height: 14)
+        addSubview(name)
+        addSubview(bar)
+        addSubview(info)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) non usato") }
+
+    func update(_ t: [String: Any]) {
+        let path = (t["name"] as? String) ?? ""
+        let up = flag(t["up"])
+        let size = (t["size"] as? NSNumber)?.int64Value ?? 0
+        let done = (t["done"] as? NSNumber)?.int64Value ?? 0
+        let speed = (t["speed"] as? NSNumber)?.doubleValue ?? 0
+        name.stringValue = (up ? "↑ " : "↓ ") + (path as NSString).lastPathComponent
+        name.toolTip = path
+        let frac = size > 0 ? min(1, Double(done) / Double(size)) : 0
+        bar.doubleValue = frac
+        var parts = ["\(Int(frac * 100))%", "\(bytesText(done)) di \(bytesText(size))"]
+        if speed > 0 {
+            parts.append(bytesText(Int64(speed)) + "/s")
+            parts.append(etaText(Double(size - done) / speed))
+        }
+        info.stringValue = parts.joined(separator: " · ")
     }
 }
 
@@ -168,6 +231,11 @@ final class MenuController: NSObject, NSApplicationDelegate {
     var refreshItem: NSMenuItem!
     var lastLines: [String] = []
     var lastLog = ""
+    var transferItems: [NSMenuItem] = []
+    var transferRows: [String: TransferRow] = [:]
+    var transferNames: [String] = []
+    let maxRows = 5
+    var lastProgressLog = ""
 
     var mountPath = NSHomeDirectory() + "/MIMUS"
     var downSince: Date? = Date()
@@ -279,12 +347,60 @@ final class MenuController: NSObject, NSApplicationDelegate {
             return mi
         }
         for (i, d) in detailItems.enumerated() { menu.insertItem(d, at: 1 + i) }
+        transferNames = [] // le righe dei file vanno rimesse dopo queste
+    }
+
+    // ---- file in scaricamento o caricamento: una riga con la barra ----
+
+    func showTransfers(_ list: [[String: Any]]) {
+        let shown = Array(list.prefix(maxRows))
+        let names = shown.map { ($0["name"] as? String) ?? "" } + (list.count > maxRows ? ["+\(list.count - maxRows)"] : [])
+        if names != transferNames {
+            transferNames = names
+            for mi in transferItems {
+                mi.view = nil
+                menu.removeItem(mi)
+            }
+            transferItems = []
+            var rows: [String: TransferRow] = [:]
+            var at = 1 + detailItems.count
+            for t in shown {
+                let key = (t["name"] as? String) ?? ""
+                let row = transferRows[key] ?? TransferRow()
+                rows[key] = row
+                let mi = NSMenuItem()
+                mi.view = row
+                menu.insertItem(mi, at: at)
+                transferItems.append(mi)
+                at += 1
+            }
+            if list.count > maxRows {
+                let mi = NSMenuItem(title: "e altri \(list.count - maxRows) file", action: nil, keyEquivalent: "")
+                mi.isEnabled = false
+                menu.insertItem(mi, at: at)
+                transferItems.append(mi)
+            }
+            transferRows = rows
+        }
+        for t in shown {
+            if let key = t["name"] as? String { transferRows[key]?.update(t) }
+        }
+        if debug {
+            let line = "avanzamento: " + shown.compactMap { t in
+                (t["name"] as? String).map { "\($0) " + (transferRows[$0]?.info.stringValue ?? "") }
+            }.joined(separator: " | ") + "\n"
+            if line != lastProgressLog {
+                lastProgressLog = line
+                FileHandle.standardError.write(line.data(using: .utf8) ?? Data())
+            }
+        }
     }
 
     // ---- stato ----
 
     @objc func apply(_ obj: Any?) {
         guard let s = obj as? Snapshot else { return }
+        defer { showTransfers(s.rcUp ? s.transfers : []) }
         let now = Date()
         let settings = readSettings()
         if let mp = settings?["mount_path"] as? String, !mp.isEmpty { mountPath = mp }

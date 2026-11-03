@@ -181,6 +181,18 @@ CD=$T/cache/vfs/mimus/Doc
 ok "copia spostata al nuovo nome, non riscaricata" "grep -q 'Doc/ren2.bin' $T/orph.json && [ -f $CD/ren2.bin ] && [ ! -f $CD/ren.bin ]"
 ok "contenuto giusto" "cmp -s $S/Doc/ren2.bin $M/Doc/ren2.bin"
 
+echo "== 9. avanzamento dello scaricamento (barra nel menu e pallino nel Finder)"
+stopm; EXTRA="--bwlimit 4M"; startm
+head -c 20000000 /dev/urandom > $S/Doc/grande.bin; sleep 11; ls $M/Doc >/dev/null
+(cat $M/Doc/grande.bin > /dev/null &); sleep 3
+rcj vfs/mimus-transfers '{}' > $T/tr.json
+rcj vfs/mimus-states '{"dir": "Doc"}' > $T/st.json
+ok "scaricamento in corso con byte, dimensione e velocità" "python3 -c 'import json,sys; t=[x for x in json.load(open(sys.argv[1]))[\"transfers\"] if x[\"name\"]==\"Doc/grande.bin\"]; sys.exit(not (t and not t[0][\"up\"] and 0 < t[0][\"done\"] < t[0][\"size\"] == 20000000 and t[0][\"speed\"] > 0))' $T/tr.json"
+ok "nel Finder: «downloading» con la percentuale" "python3 -c 'import json,sys; e=[x for x in json.load(open(sys.argv[1]))[\"entries\"] if x[\"name\"]==\"grande.bin\"]; sys.exit(not (e and e[0][\"state\"]==\"downloading\" and 0 < e[0].get(\"progress\",0) < 100))' $T/st.json"
+for i in $(seq 30); do sleep 1; rcj vfs/mimus-transfers '{}' | grep -q grande.bin || break; done
+ok "finito: non è più in corso ed è sul Mac" "! rcj vfs/mimus-transfers '{}' | grep -q grande.bin && states Doc | grep -q 'grande.bin=local'"
+stopm; EXTRA=""; startm
+
 stopm; srv_off
 printf 'Passw0rd\nPassw0rd\n' | smbpasswd -c $T/smb.conf -s smbtest >/dev/null
 
