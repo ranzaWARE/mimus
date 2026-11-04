@@ -122,6 +122,26 @@ func runCmd(ctx context.Context, name string, args ...string) (stdout, stderr st
 	return strings.TrimRight(out.String(), "\r\n"), errb.String(), err
 }
 
+// errAskLater: another question is open. An upload does not wait for it
+// (it would hold one of the few upload slots, and the other files would stop
+// as well): it is tried again in a few seconds. Wraps context.Canceled, so
+// the VFS retries soon and without counting it as a failure.
+var errAskLater = fmt.Errorf("c'è già una domanda aperta, riprovo tra poco: %w", context.Canceled)
+
+// askUpload is ask for the uploads: if another question is open it does
+// not wait (errAskLater)
+func (f *Fs) askUpload(ctx context.Context, message, def string, buttons ...string) (string, error) {
+	select {
+	case uiSem <- struct{}{}:
+		unlockUI()
+	default:
+		if f.uiMode() != "none" {
+			return "", errAskLater
+		}
+	}
+	return f.ask(ctx, message, def, buttons...)
+}
+
 // ask shows a dialog and returns the chosen button, or def when there is
 // no answer (no UI, timeout, dialog error). At most 3 buttons. It returns
 // an error only if ctx is cancelled: the caller must then not act.

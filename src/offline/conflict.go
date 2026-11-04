@@ -17,6 +17,22 @@ import (
 
 // ---------- upload conflicts (called by the patched VFS cache) ----------
 
+// scratchName: files the apps make and drop on their own, never asked
+// about: the "._" files where macOS keeps the extended attributes of a file
+// on the server, the temporary copies of a safe save (Adobe «Acr….tmp», …)
+// and the owner files of Office and LibreOffice. A question about them
+// means nothing to the user, and while it waits it holds an upload slot.
+func scratchName(name string) bool {
+	leaf := path.Base(name)
+	low := strings.ToLower(leaf)
+	switch {
+	case strings.HasPrefix(leaf, "._"), strings.HasPrefix(leaf, "~$"), strings.HasPrefix(leaf, ".~lock."),
+		strings.HasSuffix(low, ".tmp"), strings.HasSuffix(low, ".temp"):
+		return true
+	}
+	return false
+}
+
 // ResolveUploadConflict is called before a locally modified file is
 // uploaded. If the remote copy is not the version the local edit started
 // from, the user chooses what to do.
@@ -33,9 +49,13 @@ func (f *Fs) ResolveUploadConflict(ctx context.Context, name, baseFingerprint st
 		if baseFingerprint == "" {
 			return "", "", nil, nil // new file
 		}
+		if scratchName(name) {
+			fs.Infof(f, "%q cancellato sul server remoto: è un file di servizio, non lo ricreo", name)
+			return "discard", "", nil, nil
+		}
 		const discard, recreate = "Scarta le mie modifiche", "Ricrea il file"
 		msg := fmt.Sprintf("Hai modificato «%s», ma nel frattempo qualcuno l'ha cancellato (o spostato) sul server remoto.\n\nCosa faccio?", name)
-		ans, err := f.ask(ctx, msg, recreate, discard, recreate)
+		ans, err := f.askUpload(ctx, msg, recreate, discard, recreate)
 		if err != nil {
 			return "", "", nil, err
 		}
@@ -52,6 +72,10 @@ func (f *Fs) ResolveUploadConflict(ctx context.Context, name, baseFingerprint st
 	curFingerprint := fs.Fingerprint(ctx, cur, fast)
 	if curFingerprint == baseFingerprint {
 		return "", "", cur, nil
+	}
+	if scratchName(name) {
+		fs.Infof(f, "%q cambiato anche sul server remoto: è un file di servizio, vale quello di questo computer", name)
+		return "overwrite", "", cur, nil
 	}
 	// a new local file where the remote has one: always asked. (A file put
 	// in place of one the Mac knew, as in a safe-save, carries that version
@@ -76,7 +100,7 @@ func (f *Fs) ResolveUploadConflict(ctx context.Context, name, baseFingerprint st
 	}
 	msg += fmt.Sprintf("\n\nVersione remota: %s, %s\n\n• Scarta la mia: resta quella remota\n• Tieni entrambe: la tua viene salvata come «%s»\n• Sovrascrivi: la tua sostituisce quella remota",
 		cur.ModTime(ctx).Local().Format("02/01/2006 15:04"), humanSize(cur.Size()), path.Base(alt))
-	ans, err := f.ask(ctx, msg, keepBoth, discard, keepBoth, overwrite)
+	ans, err := f.askUpload(ctx, msg, keepBoth, discard, keepBoth, overwrite)
 	if err != nil {
 		return "", "", nil, err
 	}

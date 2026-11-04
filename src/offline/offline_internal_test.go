@@ -520,3 +520,32 @@ func TestOpenOnlyKnownVersion(t *testing.T) {
 	must(t, err)
 	_ = in.Close()
 }
+
+func TestScratchName(t *testing.T) {
+	for name, want := range map[string]bool{
+		"Brand/05_Icone/._Acr8089410626419228631 2.tmp": true,
+		"a/._Report.docx":      true,
+		"a/Acr123.tmp":         true,
+		"a/~$Report.docx":      true,
+		"a/.~lock.Report.odt#": true,
+		"a/Report.docx":        false,
+		"a/Tavola.indd":        false,
+		"a/_bozza.ai":          false,
+		"a/tmp/Report.docx":    false,
+	} {
+		if got := scratchName(name); got != want {
+			t.Errorf("scratchName(%q) = %v, want %v", name, got, want)
+		}
+	}
+}
+
+// with a question already open an upload does not wait for its turn
+func TestAskUploadDoesNotWait(t *testing.T) {
+	f := &Fs{opt: Options{UI: "/bin/false"}}
+	uiSem <- struct{}{}
+	_, err := f.askUpload(context.Background(), "domanda", "A", "A", "B")
+	unlockUI()
+	if !errors.Is(err, errAskLater) || !errors.Is(err, context.Canceled) {
+		t.Fatalf("err = %v", err)
+	}
+}

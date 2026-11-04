@@ -1,7 +1,7 @@
 diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
 --- a/cmd/nfsmount/nfsmount.go
 +++ b/cmd/nfsmount/nfsmount.go
-@@ -8,14 +8,21 @@ package nfsmount
+@@ -8,14 +8,21 @@
  import (
  	"bytes"
  	"context"
@@ -23,7 +23,7 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
  	"github.com/rclone/rclone/fs/config/flags"
  	"github.com/rclone/rclone/vfs"
  )
-@@ -72,34 +79,76 @@ func mount(VFS *vfs.VFS, mountpoint string, opt *mountlib.Options) (asyncerrors
+@@ -72,34 +79,76 @@
  	cmd = append(cmd, "localhost:"+opt.VolumeName, mountpoint)
  	fs.Debugf(nil, "Running mount command: %q", cmd)
  
@@ -114,7 +114,7 @@ diff --git a/cmd/nfsmount/nfsmount.go b/cmd/nfsmount/nfsmount.go
  		} else if shutdownErr != nil {
  			return fmt.Errorf("failed to shutdown NFS server: %e", shutdownErr)
  		}
-@@ -114,3 +163,128 @@ func mount(VFS *vfs.VFS, mountpoint string, opt *mountlib.Options) (asyncerrors
+@@ -114,3 +163,128 @@
  
  	return
  }
@@ -355,27 +355,58 @@ diff --git a/vendor/github.com/willscott/go-nfs/nfs_onwrite.go b/vendor/github.c
 +type mimusSyncer interface {
 +	MimusSync(filename string) error
 +}
+diff --git a/vendor/github.com/willscott/go-nfs/nfs_onrename.go b/vendor/github.com/willscott/go-nfs/nfs_onrename.go
+--- a/vendor/github.com/willscott/go-nfs/nfs_onrename.go
++++ b/vendor/github.com/willscott/go-nfs/nfs_onrename.go
+@@ -87,7 +87,18 @@
+ 		return &NFSStatusError{NFSStatusIO, err}
+ 	}
+ 
+-	if err := userHandle.InvalidateHandle(fs, oldHandle); err != nil {
++	// MIMUS: the handle follows the renamed file, so an app that keeps it
++	// open goes on using it (the old handle would be "stale")
++	if rh, ok := userHandle.(interface {
++		RenameHandle(billy.Filesystem, []string, []string) error
++	}); ok {
++		src := append(append([]string{}, fromPath...), string(from.Filename))
++		dst := append(append([]string{}, toPath...), string(to.Filename))
++		err = rh.RenameHandle(fs, src, dst)
++	} else {
++		err = userHandle.InvalidateHandle(fs, oldHandle)
++	}
++	if err != nil {
+ 		return &NFSStatusError{NFSStatusServerFault, err}
+ 	}
+ 
 diff --git a/cmd/serve/nfs/mimus_cache.go b/cmd/serve/nfs/mimus_cache.go
 new file mode 100644
 --- /dev/null
 +++ b/cmd/serve/nfs/mimus_cache.go
-@@ -0,0 +1,188 @@
+@@ -0,0 +1,286 @@
 +//go:build unix
 +
 +package nfs
 +
-+// MIMUS: NFS file handles that stay valid when the service restarts.
++// MIMUS: NFS file handles that stay valid when the service restarts and
++// that follow a file when it is renamed.
 +//
-+// The handle of a file is the MD5 of its path: the same in every run. The
-+// way back (handle -> path) is kept in memory and appended to a small log
-+// (one line per path ever handed out), read again at start. So after a
-+// restart (update, «Riavvia collegamento», crash) the Mac keeps using the
-+// folder it has mounted, with the handles it already has: no unmount, no
-+// remount, nothing for the Finder to notice.
++// The handle of a file is the MD5 of its path the first time it is seen
++// (the same in every run). The way back (handle -> path) is kept in memory
++// and appended to a small log (one line per change), read again at start.
++// So after a restart (update, «Riavvia collegamento», crash) the Mac keeps
++// using the folder it has mounted, with the handles it already has: no
++// unmount, no remount, nothing for the Finder to notice.
++//
++// A rename moves the handle with the file (and the handles of everything in
++// a renamed folder), as NFS requires: an app that keeps the file open, as
++// the safe save of Adobe apps does with its temporary copy, goes on reading
++// and writing it under the new name. A new file later created at the old
++// path gets a handle of its own.
 +
 +import (
 +	"bufio"
 +	"crypto/md5"
++	"crypto/rand"
 +	"encoding/hex"
 +	"fmt"
 +	"math"
@@ -397,7 +428,8 @@ new file mode 100644
 +type mimusHandler struct {
 +	mu      sync.RWMutex
 +	billyFS billy.Filesystem
-+	paths   map[[md5.Size]byte]string
++	paths   map[[md5.Size]byte]string // handle -> path
++	byPath  map[string][md5.Size]byte // path -> handle
 +	file    string
 +	log     *os.File
 +	written int64
@@ -415,6 +447,7 @@ new file mode 100644
 +	mh := &mimusHandler{
 +		billyFS: h.billyFS,
 +		paths:   map[[md5.Size]byte]string{},
++		byPath:  map[string][md5.Size]byte{},
 +		file:    filepath.Join(dir, "handles.log"),
 +	}
 +	mh.load()
@@ -447,12 +480,45 @@ new file mode 100644
 +			continue
 +		}
 +		if rest == "-" {
-+			delete(mh.paths, key)
++			mh._forget(key)
 +			continue
 +		}
 +		if p, err := strconv.Unquote(rest); err == nil {
-+			mh.paths[key] = p
++			mh._set(key, p)
 +		}
++	}
++}
++
++// _set: handle key is the file at p (call with the lock held, or at load)
++func (mh *mimusHandler) _set(key [md5.Size]byte, p string) {
++	if old, ok := mh.paths[key]; ok && mh.byPath[old] == key {
++		delete(mh.byPath, old)
++	}
++	if other, ok := mh.byPath[p]; ok && other != key {
++		delete(mh.paths, other) // the path now belongs to this handle
++	}
++	mh.paths[key] = p
++	mh.byPath[p] = key
++}
++
++func (mh *mimusHandler) _forget(key [md5.Size]byte) {
++	if p, ok := mh.paths[key]; ok {
++		if mh.byPath[p] == key {
++			delete(mh.byPath, p)
++		}
++		delete(mh.paths, key)
++	}
++}
++
++func (mh *mimusHandler) _log(key [md5.Size]byte, p string) {
++	line := strconv.Quote(p)
++	if p == "\x00" {
++		line = "-"
++	}
++	n, err := fmt.Fprintf(mh.log, "%x\t%s\n", key, line)
++	mh.written += int64(n)
++	if err != nil {
++		fs.Errorf("nfs", "handle cache: %v", err)
 +	}
 +}
 +
@@ -491,23 +557,30 @@ new file mode 100644
 +	return nil
 +}
 +
-+// ToHandle returns the handle of the file at splitPath (always the same)
++// ToHandle returns the handle of the file at splitPath: the one it already
++// has, or the MD5 of the path for a file seen for the first time (a random
++// one if that is taken by a file renamed from this path)
 +func (mh *mimusHandler) ToHandle(f billy.Filesystem, splitPath []string) []byte {
 +	fullPath := path.Join(splitPath...)
-+	key := md5.Sum([]byte(fullPath))
 +	mh.mu.RLock()
-+	p, ok := mh.paths[key]
++	key, ok := mh.byPath[fullPath]
 +	mh.mu.RUnlock()
-+	if !ok || p != fullPath {
-+		mh.mu.Lock()
-+		mh.paths[key] = fullPath
-+		n, err := fmt.Fprintf(mh.log, "%x\t%s\n", key, strconv.Quote(fullPath))
-+		mh.written += int64(n)
-+		if err != nil {
++	if ok {
++		return key[:]
++	}
++	mh.mu.Lock()
++	defer mh.mu.Unlock()
++	if key, ok := mh.byPath[fullPath]; ok {
++		return key[:]
++	}
++	key = md5.Sum([]byte(fullPath))
++	if _, taken := mh.paths[key]; taken {
++		if _, err := rand.Read(key[:]); err != nil {
 +			fs.Errorf("nfs", "handle cache: %v", err)
 +		}
-+		mh.mu.Unlock()
 +	}
++	mh._set(key, fullPath)
++	mh._log(key, fullPath)
 +	return key[:]
 +}
 +
@@ -537,11 +610,59 @@ new file mode 100644
 +	mh.mu.Lock()
 +	defer mh.mu.Unlock()
 +	if _, ok := mh.paths[key]; ok {
-+		delete(mh.paths, key)
-+		n, _ := fmt.Fprintf(mh.log, "%x\t-\n", key)
-+		mh.written += int64(n)
++		mh._forget(key)
++		mh._log(key, "\x00")
 +	}
 +	return nil
++}
++
++// RenameHandle moves the handles of from (and of what is inside it, for a
++// folder) to the new path; the handle of a file replaced at to is dropped
++func (mh *mimusHandler) RenameHandle(f billy.Filesystem, from, to []string) error {
++	src, dst := path.Join(from...), path.Join(to...)
++	if src == dst {
++		return nil
++	}
++	mh.mu.Lock()
++	defer mh.mu.Unlock()
++	if key, ok := mh.byPath[dst]; ok {
++		mh._forget(key)
++		mh._log(key, "\x00")
++	}
++	moved := map[[md5.Size]byte]string{}
++	if key, ok := mh.byPath[src]; ok {
++		moved[key] = dst
++	}
++	if fi, err := mh.billyFS.Stat(dst); err == nil && fi.IsDir() {
++		prefix := src + "/"
++		if src == "" {
++			prefix = ""
++		}
++		for key, p := range mh.paths {
++			if strings.HasPrefix(p, prefix) && p != src {
++				moved[key] = dst + "/" + strings.TrimPrefix(p, prefix)
++			}
++		}
++	}
++	for key := range moved {
++		mh._forget(key)
++	}
++	for key, p := range moved {
++		mh._set(key, p)
++		mh._log(key, p)
++	}
++	return nil
++}
++
++// RenameHandle: the handles follow a renamed file (see mimusHandler); with
++// the other handle caches the old handle is invalidated, as upstream
++func (h *Handler) RenameHandle(f billy.Filesystem, from, to []string) error {
++	if r, ok := h.Cache.(interface {
++		RenameHandle(billy.Filesystem, []string, []string) error
++	}); ok {
++		return r.RenameHandle(f, from, to)
++	}
++	return h.Cache.InvalidateHandle(f, h.Cache.ToHandle(f, from))
 +}
 +
 +// HandleLimit is the number of handles that can be kept
@@ -552,15 +673,20 @@ diff --git a/cmd/serve/nfs/mimus_cache_test.go b/cmd/serve/nfs/mimus_cache_test.
 new file mode 100644
 --- /dev/null
 +++ b/cmd/serve/nfs/mimus_cache_test.go
-@@ -0,0 +1,51 @@
+@@ -0,0 +1,116 @@
 +//go:build unix
 +
 +package nfs
 +
 +import (
++	"context"
 +	"os"
++	"path/filepath"
 +	"testing"
 +
++	_ "github.com/rclone/rclone/backend/local"
++	rclonefs "github.com/rclone/rclone/fs"
++	"github.com/rclone/rclone/vfs"
 +	"github.com/stretchr/testify/assert"
 +	"github.com/stretchr/testify/require"
 +)
@@ -603,4 +729,64 @@ new file mode 100644
 +	data, err := os.ReadFile(mh3.file)
 +	require.NoError(t, err)
 +	assert.NotContains(t, string(data), "\t-\n")
++}
++
++// a rename moves the handle with the file: an app with the file open goes on
++// using it; a new file at the old path gets another handle; the files in a
++// renamed folder follow it; all of it also after a restart
++func TestMimusHandlesFollowRename(t *testing.T) {
++	ctx := context.Background()
++	root := t.TempDir()
++	require.NoError(t, os.MkdirAll(filepath.Join(root, "Doc", "Sotto"), 0o755))
++	for _, f := range []string{"Doc/Acr1.tmp", "Doc/Logo.ai", "Doc/Sotto/x.txt"} {
++		require.NoError(t, os.WriteFile(filepath.Join(root, f), []byte(f), 0o644))
++	}
++	rfs, err := rclonefs.NewFs(ctx, root)
++	require.NoError(t, err)
++	v := vfs.New(rfs, nil)
++	defer v.Shutdown()
++	h := &Handler{opt: Options{HandleCacheDir: t.TempDir()}, billyFS: &FS{vfs: v}}
++	mh, err := newMimusHandler(h)
++	require.NoError(t, err)
++	h.Cache = mh
++
++	tmp := mh.ToHandle(nil, []string{"Doc", "Acr1.tmp"})
++	logo := mh.ToHandle(nil, []string{"Doc", "Logo.ai"})
++	sub := mh.ToHandle(nil, []string{"Doc", "Sotto", "x.txt"})
++
++	// safe save: the temporary copy takes the place of the document
++	require.NoError(t, h.billyFS.Rename("Doc/Acr1.tmp", "Doc/Logo.ai"))
++	require.NoError(t, h.RenameHandle(nil, []string{"Doc", "Acr1.tmp"}, []string{"Doc", "Logo.ai"}))
++	_, p, err := mh.FromHandle(tmp)
++	require.NoError(t, err, "the open temporary copy must not become stale")
++	assert.Equal(t, []string{"Doc", "Logo.ai"}, p)
++	_, _, err = mh.FromHandle(logo)
++	assert.Error(t, err, "the replaced document is gone")
++	assert.Equal(t, tmp, mh.ToHandle(nil, []string{"Doc", "Logo.ai"}))
++
++	// a new file at the old name is another file
++	again := mh.ToHandle(nil, []string{"Doc", "Acr1.tmp"})
++	assert.NotEqual(t, tmp, again)
++	_, p, err = mh.FromHandle(again)
++	require.NoError(t, err)
++	assert.Equal(t, []string{"Doc", "Acr1.tmp"}, p)
++
++	// a folder renamed: what is inside follows it
++	require.NoError(t, h.billyFS.Rename("Doc/Sotto", "Doc/Nuova"))
++	require.NoError(t, h.RenameHandle(nil, []string{"Doc", "Sotto"}, []string{"Doc", "Nuova"}))
++	_, p, err = mh.FromHandle(sub)
++	require.NoError(t, err)
++	assert.Equal(t, []string{"Doc", "Nuova", "x.txt"}, p)
++
++	// restart
++	mh2, err := newMimusHandler(h)
++	require.NoError(t, err)
++	for key, want := range map[string][]string{string(tmp): {"Doc", "Logo.ai"}, string(again): {"Doc", "Acr1.tmp"}, string(sub): {"Doc", "Nuova", "x.txt"}} {
++		_, p, err := mh2.FromHandle([]byte(key))
++		require.NoError(t, err)
++		assert.Equal(t, want, p)
++	}
++	_, _, err = mh2.FromHandle(logo)
++	assert.Error(t, err)
++	assert.Equal(t, again, mh2.ToHandle(nil, []string{"Doc", "Acr1.tmp"}))
 +}

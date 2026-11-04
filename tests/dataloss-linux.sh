@@ -21,8 +21,9 @@ cat > $T/ui.sh <<UIEOF
 kind=\$1; shift
 printf '[%s] %s\n' "\$kind" "\$(echo "\$2" | tr '\n' ' ')" >> $UI
 case \$kind in
-  ask) def=\$3; ans=""
-       while IFS='|' read -r pat a; do [ -n "\$pat" ] && case "\$2" in *"\$pat"*) ans=\$a; break;; esac; done < $ANS 2>/dev/null
+  ask) def=\$3; ans=""; wait=""
+       while IFS='|' read -r pat a w; do [ -n "\$pat" ] && case "\$2" in *"\$pat"*) ans=\$a; wait=\$w; break;; esac; done < $ANS 2>/dev/null
+       [ -n "\$wait" ] && sleep "\$wait"   # l'utente ci mette un po' a rispondere
        [ -z "\$ans" ] && ans=\$def; echo "   -> \$ans" >> $UI; echo "\$ans";;
 esac
 UIEOF
@@ -71,7 +72,7 @@ versions(){ cat "$S/$1" "$S/$(dirname "$1")/"*conflitto* 2>/dev/null; }
 srv_on
 $R config create remoto smb host=127.0.0.1 user=smbtest pass=Passw0rd idle_timeout=2s --obscure >/dev/null
 $R config create mimus offline remote=remoto:Tecnico probe=127.0.0.1:445 ui=$T/ui.sh ask_timeout=20s >/dev/null
-for n in $(seq 49); do mkdir -p $S/$n; done
+for n in $(seq 50); do mkdir -p $S/$n; done
 echo "v1" > $S/1/a.txt
 head -c 20000000 /dev/urandom > $T/grande.bin; echo "piccolo originale" > $S/2/g.bin; echo "piccolo originale" > $S/3/g.bin
 echo "base" > $S/4/a.txt; echo "base" > $S/5/a.txt
@@ -477,6 +478,24 @@ for i in 1 2 3; do cat $M/49/x.txt >/dev/null 2>&1; (echo x >> $M/49/x.txt) 2>/d
 ok "nessuna raffica di tentativi nel log" "[ \$(grep -c '49/x.txt' $T/mount.log) -le 12 ] && ! grep '49/x.txt' $T/mount.log | grep -q 'error count now'"
 srv_on
 ok "il file sul server è intatto" "[ \"\$(cat $S/49/x.txt)\" = 'solo sul server' ]"
+
+echo "== 50. salvataggio delle app Adobe (copia temporanea e file ._) e domande che non fermano i caricamenti"
+printf 'attributi' > "$M/50/._Acr1.tmp"
+waitfor "[ -f '$S/50/._Acr1.tmp' ]" 20
+rm "$S/50/._Acr1.tmp"; printf ' ancora' >> "$M/50/._Acr1.tmp"
+ok "nessuna domanda su un file ._ sparito dal server" "sleep 10; ! grep -q 'Acr1' $UI"
+ok "e non viene ricreato sul server" "[ ! -e '$S/50/._Acr1.tmp' ]"
+# cinque file creati offline e messi anche dal collega: cinque domande;
+# l'utente ci mette 30 s a rispondere alla prima
+echo "50/doppio|Tieni entrambe|30" >> $ANS
+srv_off
+for i in 1 2 3 4 5; do echo "mio $i" > $M/50/doppio$i.txt; done; sleep 3
+for i in 1 2 3 4 5; do echo "collega $i" > $S/50/doppio$i.txt; done
+srv_on; sleep 8
+for i in 1 2 3 4; do echo "nuovo $i" > $M/50/nuovo$i.txt; done
+ok "con una domanda aperta gli altri file si caricano lo stesso" "waitfor '[ \$(ls $S/50 | grep -c ^nuovo) -eq 4 ]' 25" || echo "::warning title=50::domande: $(grep -c doppio $UI); server: $(ls $S/50 | tr '\n' ' ')"
+sed -i '/50\/doppio/d' $ANS
+ok "alla fine nessuna versione persa" "waitfor '[ \$(cat $S/50/doppio* | grep -c mio) -eq 5 ] && [ \$(cat $S/50/doppio* | grep -c collega) -eq 5 ]' 120"
 
 stopm; srv_off
 echo; echo "domande mostrate:"; sed 's/^/  /' $UI

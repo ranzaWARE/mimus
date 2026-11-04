@@ -86,7 +86,7 @@ td.icon { width: 64px; text-align: center; vertical-align: middle; }
     <svg class="appicon" viewBox="0 0 1024 1024" aria-hidden="true"><use href="#appicon"/></svg>
     <div>
       <h1>MIMUS</h1>
-      <p class="lead">La cartella del server sul tuo computer, anche quando sei fuori ufficio. Guida per la versione 1.9.0.</p>
+      <p class="lead">La cartella del server sul tuo computer, anche quando sei fuori ufficio. Guida per la versione 1.9.1.</p>
       <p class="lead small">Il nome viene dal Gallimimus, il dinosauro corridore.</p>
     </div>
   </div>
@@ -104,9 +104,9 @@ td.icon { width: 64px; text-align: center; vertical-align: middle; }
   <p>Scegli il pacchetto adatto al tuo computer dalla pagina del progetto (<code>github.com/ranzaWARE/mimus/releases</code>):</p>
   <table>
     <tr><th>Sistema</th><th>Come</th></tr>
-    <tr><td>Debian, Ubuntu, Mint</td><td>scarica <code>mimus_1.9.0_amd64.deb</code> e installalo con un doppio clic oppure da terminale: <code>sudo apt install ./mimus_1.9.0_amd64.deb</code></td></tr>
+    <tr><td>Debian, Ubuntu, Mint</td><td>scarica <code>mimus_1.9.1_amd64.deb</code> e installalo con un doppio clic oppure da terminale: <code>sudo apt install ./mimus_1.9.1_amd64.deb</code></td></tr>
     <tr><td>NixOS</td><td>aggiungi il flake <code>github:ranzaWARE/mimus</code> e attiva <code>programs.mimus.enable = true;</code> (vedi <a href="#it">Per l’ufficio IT</a>)</td></tr>
-    <tr><td>Tutte le altre</td><td>scarica <code>MIMUS-1.9.0-x86_64.AppImage</code>, rendilo eseguibile (tasto destro → Proprietà → Permetti l’esecuzione, oppure <code>chmod +x</code>) e aprilo</td></tr>
+    <tr><td>Tutte le altre</td><td>scarica <code>MIMUS-1.9.1-x86_64.AppImage</code>, rendilo eseguibile (tasto destro → Proprietà → Permetti l’esecuzione, oppure <code>chmod +x</code>) e aprilo</td></tr>
   </table>
   <p>Poi apri <strong>MIMUS</strong> dal menu delle applicazioni. Servono FUSE (<code>fuse3</code>) e, per le finestre, <code>zenity</code> (o <code>kdialog</code> su KDE): sui desktop più diffusi ci sono già.</p>
 </section>
@@ -282,6 +282,8 @@ td.icon { width: 64px; text-align: center; vertical-align: middle; }
     <p>Nelle cartelle che stai guardando compaiono da soli entro pochi secondi (in VPN entro un minuto circa); nelle altre entro 5 minuti (modificabile nelle <a href="#impostazioni">Impostazioni</a>). Per vederli subito: <em>Aggiorna cartelle</em>, dall’icona in alto o dall’app.</p></details>
   <details><summary>InDesign dice «manca la necessaria autorizzazione o il documento è già aperto»</summary>
     <p>Con MIMUS 1.8.0 e precedenti la cartella collegata non permetteva di bloccare i file, e InDesign (come Office) blocca ogni documento che apre. Dalla 1.8.1 funziona: aggiorna MIMUS. Se il messaggio resta, il documento è davvero aperto da un collega: accanto al file c’è un file di blocco «~nome~….idlk».</p></details>
+  <details><summary>InDesign o Illustrator dicono «non è in grado di salvare questo file, sembra danneggiato»</summary>
+    <p>Succedeva con MIMUS 1.9.0 e precedenti, per il modo in cui le app Adobe salvano (una copia temporanea che prende il posto del documento): dalla 1.9.1 funziona, aggiorna MIMUS. Se resta un file da 0 KB con il nome del documento, cancellalo e salva di nuovo.</p></details>
   <details><summary>Da fuori ufficio non si collega</summary>
     <p>Controlla che la VPN sia attiva. Senza VPN lavori offline con i file già sul computer.</p></details>
   <details><summary>Un file non si apre offline</summary>
@@ -319,6 +321,6 @@ td.icon { width: 64px; text-align: center; vertical-align: middle; }
 </section>
 
 </main>
-<footer>MIMUS 1.9.0 · le immagini sono illustrative</footer>
+<footer>MIMUS 1.9.1 · le immagini sono illustrative</footer>
 </body>
 </html>

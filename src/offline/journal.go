@@ -232,9 +232,15 @@ func (f *Fs) waitJournal(ctx context.Context) error {
 		return nil
 	}
 	f.wakeReplay()
+	start := time.Now()
 	for f.journal.len() > 0 {
 		if !f.isOnline() {
 			return errOffline
+		}
+		// the queue is waiting for an answer: the upload does not hold its
+		// slot meanwhile (see errAskLater)
+		if len(uiSem) > 0 && time.Since(start) > 3*time.Second {
+			return errAskLater
 		}
 		select {
 		case <-ctx.Done():
@@ -413,7 +419,7 @@ func (f *Fs) applyOp(ctx context.Context, op jop) error {
 		if err != nil {
 			return err
 		}
-		if !f.sameVersion(cur, op.Size, op.ModTime) {
+		if !f.sameVersion(cur, op.Size, op.ModTime) && !scratchName(op.Src) {
 			const keep, del = "Non cancellare", "Cancella comunque"
 			msg := fmt.Sprintf("Hai cancellato offline «%s», ma nel frattempo qualcuno l'ha modificato sul server remoto.\n\nCosa faccio?", op.Src)
 			ans, err := f.ask(ctx, msg, keep, keep, del)
@@ -436,7 +442,7 @@ func (f *Fs) applyOp(ctx context.Context, op jop) error {
 		if err != nil {
 			return err
 		}
-		if !f.sameVersion(cur, op.Size, op.ModTime) {
+		if !f.sameVersion(cur, op.Size, op.ModTime) && !scratchName(op.Src) {
 			const doIt = "Rinomina comunque"
 			msg := fmt.Sprintf("Hai rinominato offline «%s» in «%s», ma nel frattempo qualcuno ha modificato il file sul server remoto.\n\nCosa faccio?", op.Src, path.Base(op.Dst))
 			ans, err := f.ask(ctx, msg, cancelRename, cancelRename, doIt)

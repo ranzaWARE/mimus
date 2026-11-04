@@ -3,6 +3,22 @@
 Versioni di MIMUS (`VERSION`). Il binario riporta la versione in
 `rclone-mimus version` (es. `v1.72.0-mimus-1.0.0`).
 
+## 1.9.1 — 2026-11-04
+
+- **InDesign, Illustrator e le altre app Adobe salvano nella cartella
+  collegata.** Il loro salvataggio sicuro scrive una copia temporanea, la
+  mette al posto del documento e continua a usarla ancora aperta: il Mac
+  riceveva «file non più valido» e l'app diceva «non è in grado di salvare
+  questo file, sembra danneggiato», lasciando a volte un file da 0 KB. Ora
+  un file rinominato resta lo stesso file anche per chi lo tiene aperto
+  (anche dentro una cartella rinominata, e dopo la cancellazione di un file
+  aperto).
+- Nessuna domanda sui file di servizio delle app (`._…`, copie temporanee
+  `….tmp`, `~$…` di Office): prima comparivano domande come «Hai modificato
+  «._Acr….tmp», ma nel frattempo qualcuno l'ha cancellato».
+- Una domanda aperta non ferma più i caricamenti degli altri file (prima una
+  cartella di foto poteva restare ferma finché non si rispondeva).
+
 ## 1.9.0 — 2026-11-03
 
 - **MIMUS per Linux**, con lo stesso motore e le stesse prove del Mac:

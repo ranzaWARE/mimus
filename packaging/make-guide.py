@@ -550,6 +550,8 @@ td.icon {{ width: 64px; text-align: center; vertical-align: middle; }}
     <p>Il Finder li usa per ricordare la vista di ogni cartella. MIMUS chiede a macOS di non scriverli sulle cartelle di rete (consiglio di Apple): non intasano il server né il registro di MIMUS. Vale dal successivo avvio del Finder (tasto Opzione + clic destro sull’icona del Finder nel Dock → <em>Riapri</em>) o dal prossimo accesso. Si può cambiare in <em>Impostazioni</em>.</p></details>
   <details><summary>InDesign dice «manca la necessaria autorizzazione o il documento è già aperto»</summary>
     <p>Con MIMUS 1.8.0 e precedenti la cartella collegata non permetteva di bloccare i file, e InDesign (come Office) blocca ogni documento che apre. Dalla 1.8.1 funziona: aggiorna MIMUS. Se il messaggio resta, il documento è davvero aperto da un collega: accanto al file c’è un file di blocco «~nome~….idlk».</p></details>
+  <details><summary>InDesign o Illustrator dicono «non è in grado di salvare questo file, sembra danneggiato»</summary>
+    <p>Succedeva con MIMUS 1.9.0 e precedenti, per il modo in cui le app Adobe salvano (una copia temporanea che prende il posto del documento): dalla 1.9.1 funziona, aggiorna MIMUS. Se resta un file da 0 KB con il nome del documento, cancellalo e salva di nuovo.</p></details>
   <details><summary>Da fuori ufficio non si collega</summary>
     <p>Controlla che la VPN sia attiva. Senza VPN lavori offline con i file già sul Mac.</p></details>
   <details><summary>Un file non si apre offline</summary>
