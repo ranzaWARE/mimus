@@ -80,6 +80,8 @@ back=0
 for _ in $(seq 90); do curl -s -m 2 -X POST http://127.0.0.1:5572/core/pid | grep -q pid && mount | grep -q " on $M " && { back=1; break; }; sleep 1; done
 if [ $back = 1 ]; then echo "  OK   cartella di nuovo collegata"
 else echo "::error title=finder::la cartella non torna dopo il riavvio: $(tail -n 25 "$T/mount.log" | cut -c1-200 | enc)%0Amount: $(mount | grep -i collegata | enc)%0Aprocessi: $(lsof +D "$M" 2>/dev/null | head -8 | enc)"; FAILS=$((FAILS + 1)); fi
+# il servizio decide dopo qualche secondo se riprendere la cartella
+for _ in $(seq 60); do grep -q "la riprendo così com'è\|la scollego\|la ricollego" "$T/mount.log" && break; sleep 1; done
 if grep -q "la riprendo così com'è" "$T/mount.log"; then echo "  OK   cartella ripresa senza scollegarla"
 else echo "::warning title=finder::cartella non ripresa: $(grep -E 'collegat|riprovo' "$T/mount.log" | tail -n 4 | enc)"; fi
 open "$M"; sleep 15
@@ -100,7 +102,10 @@ kill $PID 2>/dev/null; wait $PID 2>/dev/null
     --rc --rc-addr 127.0.0.1:5572 --addr 127.0.0.1:5574 --nfs-cache-type mimus --log-file "$T/mount.log" &
 PID=$!
 back=0
-for _ in $(seq 90); do curl -s -m 2 -X POST http://127.0.0.1:5572/core/pid | grep -q pid && mount | grep -q " on $M " && { back=1; break; }; sleep 1; done
+# prima il servizio nuovo decide (ricollega), poi la cartella torna
+for _ in $(seq 60); do grep -q "con altre impostazioni: la ricollego" "$T/mount.log" && break; sleep 1; done
+for _ in $(seq 90); do curl -s -m 2 -X POST http://127.0.0.1:5572/core/pid | grep -q pid && mount | grep -q " on $M " \
+    && perl -e 'alarm 5; exec @ARGV' ls "$M" >/dev/null 2>&1 && { back=1; break; }; sleep 1; done
 if [ $back = 1 ] && grep -q "con altre impostazioni: la ricollego" "$T/mount.log"; then echo "  OK   opzioni nuove: cartella ricollegata"
 else echo "::error title=finder::opzioni nuove non applicate: $(grep -E 'collegat|riprovo|ricollego' "$T/mount.log" | tail -n 6 | enc)"; FAILS=$((FAILS + 1)); fi
 LK="$(lockprobe "$M/locale.txt")"
