@@ -20,7 +20,8 @@ enc(){ cut -c1-220 | sed 's/%/%25/g' | awk '{printf "%s%%0A", $0}'; }
 
 variant(){ # nome argomenti...
     local name=$1; shift
-    local S="$T/src" M="$T/mnt" LOG="$T/$name.log" SUM="" TRACE=""
+    local S="$T/src" M="${MNT:-$T/mnt}" LOG="$T/$name.log" SUM="" TRACE="" START
+    START="$(date '+%Y-%m-%d %H:%M:%S')"
     rm -rf "$S" "$T/cache"; mkdir -p "$S/cartella" "$M"; echo ciao > "$S/file.txt"
     "$R" nfsmount mimus: "$M" --cache-dir "$T/cache" --vfs-cache-mode full --vfs-write-back 1s \
         --log-file "$LOG" --log-level DEBUG "$@" &
@@ -45,6 +46,7 @@ variant(){ # nome argomenti...
         fi
     }
     try "attributo su un file" xattr -w com.example.prova valore "$M/file.txt"
+    try "FinderInfo (tipo e creatore, come le app Adobe)" xattr -wx com.apple.FinderInfo "49446435496e446e000000000000000000000000000000000000000000000000" "$M/file.txt"
     try "tag rosso su un file" xattr -w com.apple.metadata:_kMDItemUserTags "$TAG" "$M/file.txt"
     try "tag rosso su una cartella" xattr -w com.apple.metadata:_kMDItemUserTags "$TAG" "$M/cartella"
     try "rilettura del tag" xattr -p com.apple.metadata:_kMDItemUserTags "$M/file.txt"
@@ -65,6 +67,10 @@ variant(){ # nome argomenti...
         echo "--- sul server:"; ls -la "$S" | tail -n +2
         [ -n "$TRACE" ] && { echo "--- richieste NFS al primo errore:"; echo "$TRACE"; }
         echo "--- richieste NFS per il file ._ a mano:"; echo "${tr2:-(nessuna)}"
+        echo "--- doubleagentd e sandbox:"
+        log show --start "$START" --style compact --info --debug \
+            --predicate 'process == "doubleagentd" OR eventMessage CONTAINS[c] "doubleagent" OR (sender == "Sandbox" AND eventMessage CONTAINS "deny")' 2>/dev/null \
+            | grep -v '^Timestamp' | cut -c1-260 | tail -n 25
     } > "$T/$name.txt"
     cat "$T/$name.txt"
     echo "::notice title=$name ($*)::$(enc < "$T/$name.txt")"
@@ -72,10 +78,15 @@ variant(){ # nome argomenti...
     mount | grep -q " on $M " && { umount -f "$M" 2>/dev/null || diskutil unmount force "$M"; }
 }
 
+SERV="--poll-interval 15s --option acdirmax=5 --option nonegnamecache --option locallocks --option rsize=1048576 --option wsize=1048576 --option readahead=64"
 if [ $# -eq 0 ]; then
-    set -- servizio "--poll-interval 15s --option acdirmax=5 --option nonegnamecache --option rsize=1048576 --option wsize=1048576 --option readahead=64" \
-        nudo "" \
-        nonamedattr "--option nonamedattr"
+    # la cartella collegata in posti diversi: temporanea, cartella Inizio
+    # (come il servizio vero), /Volumes
+    MNT="$HOME/MIMUS-xattr" variant inizio $SERV
+    sudo mkdir -p /Volumes/MIMUS-xattr && sudo chown "$(id -u)" /Volumes/MIMUS-xattr
+    MNT=/Volumes/MIMUS-xattr variant volumes $SERV
+    set -- servizio "$SERV" \
+        nudo ""
 fi
 while [ $# -ge 2 ]; do
     # shellcheck disable=SC2086
