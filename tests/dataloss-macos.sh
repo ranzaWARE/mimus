@@ -21,6 +21,7 @@ unmount(){ mount | grep -q " on $M " && { umount -f "$M" 2>/dev/null || diskutil
 start(){
     "$R" nfsmount mimus: "$M" --cache-dir "$T/cache" --vfs-cache-mode full --vfs-write-back 2s \
         --dir-cache-time 5s --poll-interval 5s --option acdirmax=5 --option nonegnamecache --option locallocks \
+        --nfs-cache-type mimus \
         --option rsize=1048576 --option wsize=1048576 --option readahead=64 \
         --log-file "$T/mount.log" --log-level DEBUG &
     PID=$!
@@ -175,7 +176,7 @@ f.write("seconda parte"); f.flush(); os.fsync(f.fileno()); f.close()
 print(open(os.path.join(d, "Logo.ai")).read())
 EOP
 ); echo "  ($out)"
-ok "l'app continua a scrivere il file rinominato" "[ \"$out\" = 'versione 2, prima parte. seconda parte' ]"
+ok "l'app continua a scrivere il file rinominato" '[ "$out" = "versione 2, prima parte. seconda parte" ]'
 ok "sul server il documento intero" "waitfor '[ \"\$(cat \"$S/17/Logo.ai\")\" = \"versione 2, prima parte. seconda parte\" ]' 20"
 ok "nessuna copia temporanea rimasta" "sleep 3; ! ls -a \"$S/17\" | grep -q Acr1"
 
@@ -187,7 +188,7 @@ os.write(fd, b"uno"); os.unlink(sys.argv[1]); os.write(fd, b"due")
 os.lseek(fd, 0, 0); print(os.read(fd, 100).decode()); os.close(fd)
 EOP
 ); echo "  ($out)"
-ok "si rilegge tutto quello che è stato scritto" "[ \"$out\" = unodue ]"
+ok "si rilegge tutto quello che è stato scritto" '[ "$out" = unodue ]'
 ok "e alla chiusura non resta niente sul server" "sleep 8; [ \$(ls -A \"$S/18\" | wc -l) -eq 0 ]"
 
 echo "== 19. cartella rinominata con un file aperto dentro"
@@ -200,7 +201,8 @@ f.write("b"); f.flush(); os.fsync(f.fileno()); f.close()
 print(open(os.path.join(d, "Nuova", "f.txt")).read())
 EOP
 ); echo "  ($out)"
-ok "il file nella cartella rinominata ha tutto" "[ \"$out\" = ab ] && waitfor '[ \"\$(cat \"$S/19/Nuova/f.txt\")\" = ab ]' 20"
+ok "il file nella cartella rinominata ha tutto" '[ "$out" = ab ]'
+ok "e sul server" "waitfor '[ \"\$(cat \"$S/19/Nuova/f.txt\")\" = ab ]' 20"
 
 echo "== 20. una finestra aperta su una cartella che viene rinominata"
 out=$(perl -e 'alarm 60; exec @ARGV' python3 - "$M/20" 2>&1 <<'EOP'
@@ -212,7 +214,7 @@ os.rename(os.path.join(d, "Vista"), os.path.join(d, "Vista2"))
 print(",".join(sorted(os.listdir(fd))))
 EOP
 ); echo "  ($out)"
-ok "la cartella si legge ancora" "[ \"$out\" = a.txt ]"
+ok "la cartella si legge ancora" '[ "$out" = a.txt ]'
 
 stop
 echo
